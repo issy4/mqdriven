@@ -31,3 +31,5 @@ To keep Supabase authentication aligned with the production domain, set the foll
    - `https://erp.b-p.co.jp`
 
 Save the changes after updating the Site URL and redirect allow list. These values ensure the email templates and Google OAuth callbacks used by the app match the production ERP hostname.
+
+Deployment trigger test.
