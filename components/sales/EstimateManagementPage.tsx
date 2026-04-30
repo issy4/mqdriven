@@ -126,30 +126,37 @@ const EstimateModal: React.FC<EstimateModalProps> = ({ isOpen, onClose, onSave, 
     const [form, setForm] = useState<EstimateFormState>(buildDefaultForm());
     const [error, setError] = useState('');
 
-    useEffect(() => {
-        if (!isOpen) return;
-        if (estimateToEdit) {
-            setForm({
-                id: estimateToEdit.id,
-                projectId: estimateToEdit.project_id ?? '',
-                patternNo: estimateToEdit.pattern_no ?? (estimateToEdit.estimateNumber ? String(estimateToEdit.estimateNumber) : ''),
-                patternName: estimateToEdit.title ?? '',
-                specification: estimateToEdit.specification ?? estimateToEdit.notes ?? '',
-                copies: Number(estimateToEdit.copies) ?? estimateToEdit.items?.[0]?.quantity ?? 0,
-                unitPrice: Number(estimateToEdit.unit_price) ?? estimateToEdit.items?.[0]?.unitPrice ?? 0,
-                taxRate: Number(estimateToEdit.tax_rate) ?? 10,
-                deliveryPlace: estimateToEdit.delivery_place ?? '',
-                transactionMethod: estimateToEdit.transaction_method ?? '',
-                deliveryDate: estimateToEdit.delivery_date ?? '',
-                expirationDate: estimateToEdit.expiration_date ?? '',
-                note: estimateToEdit.notes ?? '',
-                status: (estimateToEdit.status as EstimateStatus) ?? EstimateStatus.Draft,
-            });
-        } else {
-            setForm(buildDefaultForm());
-        }
-        setError('');
-    }, [isOpen, estimateToEdit]);
+useEffect(() => {
+    if (!isOpen) return;
+
+    const safeNumber = (value: any, fallback = 0) => {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : fallback;
+    };
+
+    if (estimateToEdit) {
+        setForm({
+            id: estimateToEdit.id,
+            projectId: estimateToEdit.project_id ?? '',
+            patternNo: estimateToEdit.pattern_no ?? '',
+            patternName: estimateToEdit.pattern_name ?? estimateToEdit.projectName ?? estimateToEdit.title ?? '',
+            specification: estimateToEdit.specification ?? estimateToEdit.notes ?? '',
+            copies: safeNumber(estimateToEdit.copies, estimateToEdit.items?.[0]?.quantity ?? 0),
+            unitPrice: safeNumber(estimateToEdit.unit_price, estimateToEdit.items?.[0]?.unitPrice ?? 0),
+            taxRate: safeNumber(estimateToEdit.tax_rate, 10),
+            deliveryPlace: estimateToEdit.delivery_place ?? '',
+            transactionMethod: estimateToEdit.transaction_method ?? '',
+            deliveryDate: estimateToEdit.delivery_date ?? '',
+            expirationDate: estimateToEdit.expiration_date ?? '',
+            note: estimateToEdit.notes ?? '',
+            status: (estimateToEdit.status as EstimateStatus) ?? EstimateStatus.Draft,
+        });
+    } else {
+        setForm(buildDefaultForm());
+    }
+
+    setError('');
+}, [isOpen, estimateToEdit]);
 
     const subtotal = useMemo(() => {
         const value = Math.round((form.copies || 0) * (form.unitPrice || 0));
@@ -173,38 +180,37 @@ const EstimateModal: React.FC<EstimateModalProps> = ({ isOpen, onClose, onSave, 
             setError('パターン名（件名）を入力してください。');
             return;
         }
-        const payload: Partial<Estimate> = {
-            id: form.id,
-            project_id: form.projectId || null,
-            pattern_no: form.patternNo || null,
-            title: form.patternName,
-            specification: form.specification,
-            delivery_place: form.deliveryPlace,
-            transaction_method: form.transactionMethod,
-            delivery_date: form.deliveryDate || null,
-            expiration_date: form.expirationDate || null,
-            notes: form.note,
-            status: form.status,
-            copies: String(form.copies),
-            unit_price: String(form.unitPrice),
-            tax_rate: String(form.taxRate),
-            subtotal: String(subtotal),
-            consumption: String(taxAmount),
-            total: String(total),
-            estimateNumber: Number(form.patternNo || estimateToEdit?.estimateNumber || Date.now()),
-            customerName: form.projectId ? `案件${form.projectId}` : estimateToEdit?.customerName ?? '未設定',
-            items: [
-                {
-                    division: 'その他',
-                    content: form.specification || form.patternName,
-                    quantity: form.copies,
-                    unit: '式',
-                    unitPrice: form.unitPrice,
-                    price: subtotal,
-                    subtotal,
-                },
-            ],
-        };
+const payload: Partial<Estimate> = {
+    id: form.id,
+    project_id: form.projectId || null,
+    pattern_no: form.patternNo || null,
+    pattern_name: form.patternName || null,
+    title: form.patternName || null,
+    specification: form.specification,
+    delivery_place: form.deliveryPlace,
+    transaction_method: form.transactionMethod,
+    delivery_date: form.deliveryDate || null,
+    expiration_date: form.expirationDate || null,
+    notes: form.note,
+    status: form.status,
+    copies: String(form.copies),
+    unit_price: String(form.unitPrice),
+    tax_rate: String(form.taxRate),
+    subtotal: String(subtotal),
+    consumption: String(taxAmount),
+    total: String(total),
+    items: [
+        {
+            division: 'その他',
+            content: form.specification || form.patternName,
+            quantity: form.copies,
+            unit: '式',
+            unitPrice: form.unitPrice,
+            price: subtotal,
+            subtotal,
+        },
+    ],
+};
         try {
             await onSave(payload);
         } catch (err: any) {
