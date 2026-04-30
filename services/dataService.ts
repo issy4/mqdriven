@@ -4076,7 +4076,7 @@ const mapEstimateRow = (row: any): Estimate => {
     const customerName =
         rawCustomerName && rawCustomerName !== '不明'
             ? rawCustomerName
-            : '（顧客未設定）';
+            : 'ー';
 
     const rawSpec = toStringOrNull(row.specification) || '';
     const specShort = rawSpec.length > 50 ? rawSpec.slice(0, 50) + '…' : rawSpec;
