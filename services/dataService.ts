@@ -4053,7 +4053,6 @@ const generateEstimateId = () => {
 };
 
 const mapEstimateRow = (row: any): Estimate => {
-    // Handle all database fields with proper fallbacks
     const copies = toNumberOrNull(row.copies);
     const unitPrice = toNumberOrNull(row.unit_price);
     const subtotal = toNumberOrNull(row.subtotal) ?? (copies !== null && unitPrice !== null ? copies * unitPrice : null);
@@ -4062,28 +4061,44 @@ const mapEstimateRow = (row: any): Estimate => {
     const total = toNumberOrNull(row.total) ?? (subtotal !== null && taxAmount !== null ? subtotal + taxAmount : subtotal ?? 0);
     const variableCostAmount = toNumberOrNull(row.valiable_cost ?? row.variable_cost_amount);
     const mqAmount = toNumberOrNull(row.mq_amount);
-    const mqRate = toNumberOrNull(row.mq_rate);
+    const mqRate = toNumberOrNull(row.mq_rate ?? row.margin_rate);
     const detailCount = toNumberOrNull(row.detail_count);
 
-    // Project and customer names
-    const projectName = toStringOrNull(row.project_name) || toStringOrNull(row.pattern_name) || toStringOrNull(row.p_project_name);
-    const rawCustomerName = toStringOrNull(row.customers?.customer_name) || toStringOrNull(row.customer_name) || toStringOrNull(row.customer_display_name);
-    const customerName = (rawCustomerName && rawCustomerName !== '不明') ? rawCustomerName : (projectName || '（顧客未設定）');
+    // 件名は project_name を最優先
+    const projectName =
+        toStringOrNull(row.project_name) ||
+        toStringOrNull(row.p_project_name) ||
+        toStringOrNull(row.pattern_name);
 
-    // Display name — specificationが長文の場合は先頭50文字に切り詰め
+    // 顧客名は customer_name
+    const rawCustomerName =
+        toStringOrNull(row.customers?.customer_name) ||
+        toStringOrNull(row.customer_name) ||
+        toStringOrNull(row.customer_display_name);
+
+    const customerName =
+        rawCustomerName && rawCustomerName !== '不明'
+            ? rawCustomerName
+            : '（顧客未設定）';
+
     const rawSpec = toStringOrNull(row.specification) || '';
     const specShort = rawSpec.length > 50 ? rawSpec.slice(0, 50) + '…' : rawSpec;
     const displayName = projectName || specShort || `見積${row.estimates_id || row.id}`;
 
-    // Dates
-    const createdAt = toStringOrNull(row.created_at) || toStringOrNull(row.create_date) || new Date().toISOString();
-    const updatedAt = toStringOrNull(row.updated_at) || toStringOrNull(row.update_date) || createdAt;
+    const createdAt =
+        toStringOrNull(row.created_at) ||
+        toStringOrNull(row.create_date) ||
+        new Date().toISOString();
 
-    // Status mapping
+    const updatedAt =
+        toStringOrNull(row.updated_at) ||
+        toStringOrNull(row.update_date) ||
+        createdAt;
+
     const status = toStringOrNull(row.status) || 'draft';
 
     console.log('Mapping estimate:', {
-        id: row.estimates_id || row.id,
+        id: row.id,
         estimates_id: row.estimates_id,
         projectName,
         customerName,
@@ -4094,7 +4109,10 @@ const mapEstimateRow = (row: any): Estimate => {
     });
 
     return {
-        id: toStringOrNull(row.estimates_id) || toStringOrNull(row.id) || generateEstimateId(),
+        // 内部IDはDBのuuidを優先
+        id: toStringOrNull(row.id) || generateEstimateId(),
+
+        // 生データ保持
         estimates_id: toStringOrNull(row.estimates_id),
         project_id: toStringOrNull(row.project_id),
         pattern_no: toStringOrNull(row.pattern_no),
@@ -4117,7 +4135,7 @@ const mapEstimateRow = (row: any): Estimate => {
         approval_status3: toStringOrNull(row.approval_status3),
         approval_status4: toStringOrNull(row.approval_status4),
         subtotal: toStringOrNull(row.subtotal),
-        consumption: toStringOrNull(row.consumption),
+        consumption: toStringOrNull(row.consumption ?? row.tax_amount),
         total: toStringOrNull(row.total),
         valiable_cost: toStringOrNull(row.valiable_cost),
         delivery_date: toStringOrNull(row.delivery_date),
@@ -4125,29 +4143,32 @@ const mapEstimateRow = (row: any): Estimate => {
         create_id: toStringOrNull(row.create_id),
         update_date: toStringOrNull(row.update_date),
         update_id: toStringOrNull(row.update_id),
-        status: status,
+        status,
 
-        // Frontend fields
-        estimateNumber: toNumberOrNull(row.estimate_number ?? row.pattern_no) || 0,
+        // 一覧画面用
+        estimateNumber: toNumberOrNull(row.estimates_id) || 0,
         customerName,
-        title: toStringOrNull(row.pattern_name) || toStringOrNull(row.specification) || '見積',
+        title: projectName || '見積',
         displayName,
         projectName,
+
         items: [{
             division: 'その他',
-            content: toStringOrNull(row.specification) || toStringOrNull(row.pattern_name) || '見積',
+            content: toStringOrNull(row.specification) || projectName || '見積',
             quantity: copies || 0,
             unit: '式',
             unitPrice: unitPrice || 0,
             price: subtotal || total || 0,
         }],
+
         taxAmount: taxAmount || 0,
         variable_cost_amount: variableCostAmount || 0,
         mqAmount: mqAmount || 0,
         mqRate: mqRate || 0,
+        mq_rate: mqRate || 0,
         detail_count: detailCount || 0,
         currency: 'JPY',
-        notes: toStringOrNull(row.note),
+        notes: toStringOrNull(row.notes ?? row.note),
         created_by: toStringOrNull(row.created_by) || toStringOrNull(row.create_id),
         created_at: createdAt,
         updated_at: updatedAt,
