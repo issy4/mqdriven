@@ -4056,7 +4056,6 @@ const mapEstimateRow = (row: any): Estimate => {
     const copies = toNumberOrNull(row.copies);
     const unitPrice = toNumberOrNull(row.unit_price);
     const subtotal = toNumberOrNull(row.subtotal) ?? (copies !== null && unitPrice !== null ? copies * unitPrice : null);
-    const taxRate = toNumberOrNull(row.tax_rate);
     const taxAmount = toNumberOrNull(row.tax_amount ?? row.consumption);
     const total = toNumberOrNull(row.total) ?? (subtotal !== null && taxAmount !== null ? subtotal + taxAmount : subtotal ?? 0);
     const variableCostAmount = toNumberOrNull(row.valiable_cost ?? row.variable_cost_amount);
@@ -4064,13 +4063,11 @@ const mapEstimateRow = (row: any): Estimate => {
     const mqRate = toNumberOrNull(row.mq_rate ?? row.margin_rate);
     const detailCount = toNumberOrNull(row.detail_count);
 
-    // 件名は project_name を最優先
     const projectName =
         toStringOrNull(row.project_name) ||
         toStringOrNull(row.p_project_name) ||
         toStringOrNull(row.pattern_name);
 
-    // 顧客名は customer_name
     const rawCustomerName =
         toStringOrNull(row.customers?.customer_name) ||
         toStringOrNull(row.customer_name) ||
@@ -4097,22 +4094,9 @@ const mapEstimateRow = (row: any): Estimate => {
 
     const status = toStringOrNull(row.status) || 'draft';
 
-    console.log('Mapping estimate:', {
-        id: row.id,
-        estimates_id: row.estimates_id,
-        projectName,
-        customerName,
-        status,
-        total,
-        rawRowKeys: Object.keys(row),
-        rawRow: row
-    });
-
     return {
-        // 内部IDはDBのuuidを優先
         id: toStringOrNull(row.id) || generateEstimateId(),
 
-        // 生データ保持
         estimates_id: toStringOrNull(row.estimates_id),
         project_id: toStringOrNull(row.project_id),
         pattern_no: toStringOrNull(row.pattern_no),
@@ -4145,7 +4129,6 @@ const mapEstimateRow = (row: any): Estimate => {
         update_id: toStringOrNull(row.update_id),
         status,
 
-        // 一覧画面用
         estimateNumber: toNumberOrNull(row.estimates_id) || 0,
         customerName,
         title: projectName || '見積',
