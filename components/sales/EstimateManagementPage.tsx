@@ -126,30 +126,37 @@ const EstimateModal: React.FC<EstimateModalProps> = ({ isOpen, onClose, onSave, 
     const [form, setForm] = useState<EstimateFormState>(buildDefaultForm());
     const [error, setError] = useState('');
 
-    useEffect(() => {
-        if (!isOpen) return;
-        if (estimateToEdit) {
-            setForm({
-                id: estimateToEdit.id,
-                projectId: estimateToEdit.project_id ?? '',
-                patternNo: estimateToEdit.pattern_no ?? (estimateToEdit.estimateNumber ? String(estimateToEdit.estimateNumber) : ''),
-                patternName: estimateToEdit.title ?? '',
-                specification: estimateToEdit.specification ?? estimateToEdit.notes ?? '',
-                copies: Number(estimateToEdit.copies) ?? estimateToEdit.items?.[0]?.quantity ?? 0,
-                unitPrice: Number(estimateToEdit.unit_price) ?? estimateToEdit.items?.[0]?.unitPrice ?? 0,
-                taxRate: Number(estimateToEdit.tax_rate) ?? 10,
-                deliveryPlace: estimateToEdit.delivery_place ?? '',
-                transactionMethod: estimateToEdit.transaction_method ?? '',
-                deliveryDate: estimateToEdit.delivery_date ?? '',
-                expirationDate: estimateToEdit.expiration_date ?? '',
-                note: estimateToEdit.notes ?? '',
-                status: (estimateToEdit.status as EstimateStatus) ?? EstimateStatus.Draft,
-            });
-        } else {
-            setForm(buildDefaultForm());
-        }
-        setError('');
-    }, [isOpen, estimateToEdit]);
+useEffect(() => {
+    if (!isOpen) return;
+
+    const safeNumber = (value: any, fallback = 0) => {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : fallback;
+    };
+
+    if (estimateToEdit) {
+        setForm({
+            id: estimateToEdit.id,
+            projectId: estimateToEdit.project_id ?? '',
+            patternNo: estimateToEdit.pattern_no ?? '',
+            patternName: estimateToEdit.pattern_name ?? estimateToEdit.projectName ?? estimateToEdit.title ?? '',
+            specification: estimateToEdit.specification ?? estimateToEdit.notes ?? '',
+            copies: safeNumber(estimateToEdit.copies, estimateToEdit.items?.[0]?.quantity ?? 0),
+            unitPrice: safeNumber(estimateToEdit.unit_price, estimateToEdit.items?.[0]?.unitPrice ?? 0),
+            taxRate: safeNumber(estimateToEdit.tax_rate, 10),
+            deliveryPlace: estimateToEdit.delivery_place ?? '',
+            transactionMethod: estimateToEdit.transaction_method ?? '',
+            deliveryDate: estimateToEdit.delivery_date ?? '',
+            expirationDate: estimateToEdit.expiration_date ?? '',
+            note: estimateToEdit.notes ?? '',
+            status: (estimateToEdit.status as EstimateStatus) ?? EstimateStatus.Draft,
+        });
+    } else {
+        setForm(buildDefaultForm());
+    }
+
+    setError('');
+}, [isOpen, estimateToEdit]);
 
     const subtotal = useMemo(() => {
         const value = Math.round((form.copies || 0) * (form.unitPrice || 0));
