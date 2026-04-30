@@ -5,19 +5,10 @@
 
 ## 修正内容
 
-### 1. ファイル: `services/dataService.ts`
+### ファイル: `services/dataService.ts`
 **関数**: `mapEstimateRow` (行番号: 4055～4160)
 
-#### 修正前
-```typescript
-// 行 4100
-estimates_id: toStringOrNull(row.estimates_id),
-
-// 行 4132
-estimateNumber: toNumberOrNull(row.estimates_id) || 0,
-```
-
-#### 修正後
+#### 修正前（誤り）
 ```typescript
 // 行 4100
 estimates_id: toStringOrNull(row.estimates_id) || toStringOrNull(row.id),
@@ -26,30 +17,47 @@ estimates_id: toStringOrNull(row.estimates_id) || toStringOrNull(row.id),
 estimateNumber: toNumberOrNull(row.id) || toNumberOrNull(row.estimates_id) || 0,
 ```
 
-## 修正の背景
-- `estimates_list_view`（Supabaseのビュー）は `estimates_v2` テーブルの `id` カラムを返す
-- 以前のコードでは `row.estimates_id` を参照していたが、この値は常に NULL だった
-- 修正により `row.id` を優先的に参照するようにして、正しい見積番号が表示されるようになった
+#### 修正後（正しい）
+```typescript
+// 行 4100
+estimates_id: toStringOrNull(row.estimates_id),
 
-## マッピング仕様の確認
+// 行 4132
+estimateNumber: toNumberOrNull(row.estimates_id) || 0,
+```
+
+## 修正の背景
+- `row.id` は UUID（文字列）なので `toNumberOrNull` では null になる
+- No. 列には `row.estimates_id`（数値）を使用すべき
+- 前回の修正で `row.id` を優先していたのは誤りだったため、元に戻した
+
+## マッピング仕様（正しい対応）
 | フロント表示 | Estimate型フィールド | 取得元 |
 |-----------|------------------|-------|
-| No. | `estimateNumber` | `row.id` (優先) or `row.estimates_id` |
+| No. | `estimateNumber` | `row.estimates_id` |
 | 顧客名 | `customerName` | `row.customer_name` |
 | 件名 | `title` | `row.project_name` |
 | 金額 | `total` | `row.total` |
 | MQ率 | `mqRate` | `row.mq_rate` |
 | 納期 | `deliveryDate` | `row.delivery_date` |
 
-## テーブルカラム定義の確認
-`EstimateManagementPage.tsx` (行 1230～1244) のテーブルヘッダー設定:
-- `sortKey="estimateNumber"` → "No."
-- `sortKey="customerName"` → "顧客名"
-- `sortKey="title"` → "件名"
-
-これらは `mapEstimateRow` で正しくマッピングされており、テーブル表示は正常に機能します。
+## テーブル表示確認（EstimateManagementPage.tsx）
+```tsx
+// 行 1277
+<td className="py-3 px-4">{estimate.estimateNumber}</td>  // No.
+// 行 1278
+<td className="py-3 px-4">{estimate.customerName}</td>    // 顧客名
+// 行 1280-1281
+<div className="max-w-xs truncate" title={estimate.title}>
+    {estimate.title}                                       // 件名
+</div>
+// 行 1284
+{formatJPY(Number(estimate.total) || 0)}                  // 金額
+// 行 1294
+{formatDate(estimate.deliveryDate || estimate.delivery_date) || '-'} // 納期
+```
 
 ## 影響範囲
-- ✅ 見積管理一覧表示の「No.」「顧客名」「件名」が正しく表示される
-- ✅ 既存の金額、納期、ステータス表示は変更なし
-- ✅ テーブルのソート機能（sortKey）も正常に動作
+- 見積管理一覧表示の「No.」「顧客名」「件名」が正しく表示される
+- 既存の金額、納期、ステータス表示は変更なし
+- テーブルのソート機能も正常に動作

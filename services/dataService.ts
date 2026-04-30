@@ -1674,7 +1674,7 @@ const calculateCustomerBudgetsManually = async (): Promise<CustomerBudgetSummary
         ordersByProject.get(order.project_id).push(order);
     });
 
-    // 鬘ｧ螳｢蛻･髮・ｨ��ｒ菴懈・
+    // 鬘ｧ螳｢蛻･髮��ｨ��ｒ菴懈・
     const customerBudgets: CustomerBudgetSummary[] = [];
 
     for (const [customerKey, customerProjects] of projectByCustomer) {
@@ -2886,7 +2886,7 @@ export const submitApplication = async (appData: any, applicantId: string): Prom
 
     if (error) {
         console.error('[submitApplication] 逕ｳ隲狗匳骭ｲ繧ｨ繝ｩ繝ｼ:', error);
-        throw formatSupabaseError('逕ｳ隲九・逋ｻ骭���縺ｫ螟ｱ謨励＠縺ｾ縺励◆', error);
+        throw formatSupabaseError('逕ｳ隲九・���ｻ骭���縺ｫ螟ｱ謨励＠縺ｾ縺励◆', error);
     }
 
     console.log('[submitApplication] 逕ｳ隲狗匳骭ｲ謌仙粥:', data);
@@ -3686,7 +3686,7 @@ export const createPaymentRecipient = async (item: Partial<PaymentRecipient>): P
             .single());
     }
 
-    ensureSupabaseSuccess(error, '謾ｯ謇募・縺ｮ逋ｻ骭ｲ縺ｫ螟ｱ��励＠縺ｾ縺励◆');
+    ensureSupabaseSuccess(error, '謾ｯ謇募・縺ｮ逋��骭ｲ縺ｫ螟ｱ��励＠縺ｾ縺励◆');
     return mapDbPaymentRecipient(data);
 };
 
@@ -4097,7 +4097,7 @@ const mapEstimateRow = (row: any): Estimate => {
     return {
         id: toStringOrNull(row.id) || generateEstimateId(),
 
-        estimates_id: toStringOrNull(row.estimates_id) || toStringOrNull(row.id),
+        estimates_id: toStringOrNull(row.estimates_id),
         project_id: toStringOrNull(row.project_id),
         pattern_no: toStringOrNull(row.pattern_no),
         pattern_name: toStringOrNull(row.pattern_name),
@@ -4129,7 +4129,7 @@ const mapEstimateRow = (row: any): Estimate => {
         update_id: toStringOrNull(row.update_id),
         status,
 
-        estimateNumber: toNumberOrNull(row.id) || toNumberOrNull(row.estimates_id) || 0,
+        estimateNumber: toNumberOrNull(row.estimates_id) || 0,
         customerName,
         title: projectName || '見積',
         displayName,
