@@ -180,38 +180,37 @@ useEffect(() => {
             setError('パターン名（件名）を入力してください。');
             return;
         }
-        const payload: Partial<Estimate> = {
-            id: form.id,
-            project_id: form.projectId || null,
-            pattern_no: form.patternNo || null,
-            title: form.patternName,
-            specification: form.specification,
-            delivery_place: form.deliveryPlace,
-            transaction_method: form.transactionMethod,
-            delivery_date: form.deliveryDate || null,
-            expiration_date: form.expirationDate || null,
-            notes: form.note,
-            status: form.status,
-            copies: String(form.copies),
-            unit_price: String(form.unitPrice),
-            tax_rate: String(form.taxRate),
-            subtotal: String(subtotal),
-            consumption: String(taxAmount),
-            total: String(total),
-            estimateNumber: Number(form.patternNo || estimateToEdit?.estimateNumber || Date.now()),
-            customerName: form.projectId ? `案件${form.projectId}` : estimateToEdit?.customerName ?? '未設定',
-            items: [
-                {
-                    division: 'その他',
-                    content: form.specification || form.patternName,
-                    quantity: form.copies,
-                    unit: '式',
-                    unitPrice: form.unitPrice,
-                    price: subtotal,
-                    subtotal,
-                },
-            ],
-        };
+const payload: Partial<Estimate> = {
+    id: form.id,
+    project_id: form.projectId || null,
+    pattern_no: form.patternNo || null,
+    pattern_name: form.patternName || null,
+    title: form.patternName || null,
+    specification: form.specification,
+    delivery_place: form.deliveryPlace,
+    transaction_method: form.transactionMethod,
+    delivery_date: form.deliveryDate || null,
+    expiration_date: form.expirationDate || null,
+    notes: form.note,
+    status: form.status,
+    copies: String(form.copies),
+    unit_price: String(form.unitPrice),
+    tax_rate: String(form.taxRate),
+    subtotal: String(subtotal),
+    consumption: String(taxAmount),
+    total: String(total),
+    items: [
+        {
+            division: 'その他',
+            content: form.specification || form.patternName,
+            quantity: form.copies,
+            unit: '式',
+            unitPrice: form.unitPrice,
+            price: subtotal,
+            subtotal,
+        },
+    ],
+};
         try {
             await onSave(payload);
         } catch (err: any) {
