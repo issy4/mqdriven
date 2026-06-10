@@ -9,13 +9,13 @@ interface ConnectionSetupPageProps {
 const ConnectionSetupPage: React.FC<ConnectionSetupPageProps> = ({ onRetry, onShowSetup }) => {
   
   const codeSnippet = `
-// supabaseCredentials.ts
+# .env.local (プロジェクトルート)
 
-// 1. SupabaseプロジェクトのURLを貼り付けてください
-export const SUPABASE_URL = 'ここにURLを貼り付け'; 
+# 1. SupabaseプロジェクトのURL
+VITE_SUPABASE_URL=https://xxxxxxxx.supabase.co
 
-// 2. Supabaseプロジェクトのanon publicキーを貼り付けてください
-export const SUPABASE_KEY = 'ここにキーを貼り付け';
+# 2. Supabaseプロジェクトの anon public キー
+VITE_SUPABASE_ANON_KEY=your-anon-public-key
   `.trim();
 
   return (
@@ -30,10 +30,13 @@ export const SUPABASE_KEY = 'ここにキーを貼り付け';
         <div className="p-6 space-y-4">
             <div className="text-base text-slate-700 dark:text-slate-300 space-y-2">
                 <p>
-                    プロジェクトのルートディレクトリにある <code className="font-mono bg-slate-200 dark:bg-slate-700 px-1 py-0.5 rounded">supabaseCredentials.ts</code> ファイルを開いてください。
+                    プロジェクトのルートに <code className="font-mono bg-slate-200 dark:bg-slate-700 px-1 py-0.5 rounded">.env.local</code> ファイルを作成（または編集）してください。
                 </p>
                  <p>
-                    ファイル内の指示に従い、あなたのSupabaseプロジェクトのURLと公開キー（Anon Key）を貼り付けて保存してください。
+                    あなたのSupabaseプロジェクトのURLと公開キー（Anon Key）を <code className="font-mono bg-slate-200 dark:bg-slate-700 px-1 py-0.5 rounded">VITE_SUPABASE_URL</code> と <code className="font-mono bg-slate-200 dark:bg-slate-700 px-1 py-0.5 rounded">VITE_SUPABASE_ANON_KEY</code> に設定して保存し、開発サーバーを再起動してください。
+                </p>
+                 <p className="text-sm text-slate-500 dark:text-slate-400">
+                    service_role や secret key はフロント側では使用しないでください。
                 </p>
             </div>
              <pre className="bg-slate-100 dark:bg-slate-900 p-4 rounded-lg text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">

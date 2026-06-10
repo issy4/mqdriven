@@ -1,25 +1,58 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { getEnvValue } from '../utils';
 
-export const SUPABASE_URL =
-    getEnvValue('VITE_SUPABASE_URL') ||
-    getEnvValue('NEXT_PUBLIC_SUPABASE_URL') ||
-    getEnvValue('SUPABASE_URL') ||
-    '';
+// Supabase接続情報の解決順:
+//   1. import.meta.env.VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (最優先)
+//   2. 既存の supabaseCredentials.ts があればフォールバック (任意・存在しなくてもOK)
+//
+// 注意: ここではフロントエンドで安全な anon (public) key のみを使用する。
+//       service_role key や secret key は絶対にフロント側で参照しないこと。
 
-export const SUPABASE_KEY =
-    getEnvValue('VITE_SUPABASE_ANON_KEY') ||
-    getEnvValue('NEXT_PUBLIC_SUPABASE_ANON_KEY') ||
-    getEnvValue('SUPABASE_KEY') ||
-    '';
+const PLACEHOLDER_HINTS = ['ここにURLを貼り付け', 'ここにキーを貼り付け'];
+
+const isPlaceholder = (value: string | undefined | null): boolean => {
+    if (!value) return true;
+    return PLACEHOLDER_HINTS.some((hint) => value.includes(hint));
+};
+
+// 1. Vite 環境変数を最優先で読む
+const envUrl =
+    typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_SUPABASE_URL as string | undefined) : undefined;
+const envKey =
+    typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_SUPABASE_ANON_KEY as string | undefined) : undefined;
+
+// 2. 既存の supabaseCredentials.ts があればフォールバックとして読む。
+//    ファイルが存在しない場合でもビルドが壊れないよう import.meta.glob を使う。
+let fallbackUrl: string | undefined;
+let fallbackKey: string | undefined;
+try {
+    const credentialModules =
+        typeof import.meta !== 'undefined' && typeof import.meta.glob === 'function'
+            ? (import.meta.glob('../supabaseCredentials.ts', { eager: true }) as Record<string, any>)
+            : {};
+    const credentials = Object.values(credentialModules)[0];
+    if (credentials) {
+        fallbackUrl = credentials.SUPABASE_URL;
+        fallbackKey = credentials.SUPABASE_KEY;
+    }
+} catch {
+    // supabaseCredentials.ts が存在しない場合は無視してフォールバックなしで続行する。
+}
+
+export const SUPABASE_URL = (envUrl || fallbackUrl || '').trim();
+export const SUPABASE_KEY = (envKey || fallbackKey || '').trim();
+
+const MISSING_CREDENTIALS_MESSAGE =
+    'Supabaseの接続情報が設定されていません。環境変数 VITE_SUPABASE_URL と VITE_SUPABASE_ANON_KEY を設定してください。';
 
 let supabase: SupabaseClient | null = null;
 
 // 新しい接続情報でSupabaseクライアントを初期化する関数
 export const initializeSupabase = (url: string, key: string): SupabaseClient | null => {
     try {
-        if (!url || !key || url.includes('ここにURLを貼り付け') || key.includes('ここにキーを貼り付け')) {
-            console.warn("Supabase URL or Key is missing or is a placeholder in credentials file.");
+        if (!url || !key || isPlaceholder(url) || isPlaceholder(key)) {
+            console.warn(
+                'Supabase URL or Key is missing or is a placeholder. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
+            );
             supabase = null;
             return null;
         }
@@ -32,7 +65,7 @@ export const initializeSupabase = (url: string, key: string): SupabaseClient | n
         });
         return supabase;
     } catch (e) {
-        console.error("Error initializing Supabase", e);
+        console.error('Error initializing Supabase', e);
         supabase = null;
         return null;
     }
@@ -45,17 +78,14 @@ export const getSupabase = (): SupabaseClient => {
         initializeSupabase(SUPABASE_URL, SUPABASE_KEY);
     }
     if (!supabase) {
-        // エラーメッセージを更新
-        throw new Error("Supabase client is not initialized. Please configure credentials in services/supabaseClient.ts");
+        throw new Error(MISSING_CREDENTIALS_MESSAGE);
     }
     return supabase;
 };
 
 // 接続情報が設定されているか確認する関数
 export const hasSupabaseCredentials = (): boolean => {
-    const isUrlPlaceholder = SUPABASE_URL.includes('ここにURLを貼り付け');
-    const isKeyPlaceholder = SUPABASE_KEY.includes('ここにキーを貼り付け');
-    return !!(SUPABASE_URL && SUPABASE_KEY && !isUrlPlaceholder && !isKeyPlaceholder);
+    return !!(SUPABASE_URL && SUPABASE_KEY && !isPlaceholder(SUPABASE_URL) && !isPlaceholder(SUPABASE_KEY));
 };
 
 // Supabase Functions を呼び出すための Authorization ヘッダーを生成する。

@@ -441,7 +441,7 @@ const GlobalErrorBanner: React.FC<{ error: string; onRetry: () => void; onShowSe
         <div className="flex items-center gap-2">
             <button onClick={onShowSetup} className="bg-red-700 hover:bg-red-800 font-semibold text-sm py-1.5 px-3 rounded-md flex items-center gap-1.5 transition-colors">
                 <Settings className="w-4 h-4" />
-                セットアップガイド
+                セ���トアップガイド
             </button>
             <button onClick={onRetry} className="bg-red-700 hover:bg-red-800 font-semibold text-sm py-1.5 px-3 rounded-md flex items-center gap-1.5 transition-colors">
                 <RefreshCw className="w-4 h-4" />
@@ -756,7 +756,7 @@ const App: React.FC = () => {
                 const isTimeout = err instanceof TimeoutError;
                 addToast(
                     isTimeout
-                        ? 'Google連携ステータスの取得がタイムアウトしました（Supabase Functionsの応答をご確認ください）。'
+                        ? 'Google連携ステータスの��得がタイムアウトしました（Supabase Functionsの応答をご確認ください）。'
                         : 'Google連携ステータスの取得でエラーが発生しました。',
                     'error',
                 );
@@ -1036,7 +1036,7 @@ const App: React.FC = () => {
             setDbError(null);
 
             if (!hasSupabaseCredentials()) {
-                throw new Error("Supabaseの接続情報が設定されていません。supabaseCredentials.tsファイルを確認してください。");
+                throw new Error("Supabaseの接続情報が設定されていません。環境変数 VITE_SUPABASE_URL と VITE_SUPABASE_ANON_KEY を設定してください。");
             }
 
             const usersData = await dataService.getUsers();
@@ -1797,11 +1797,11 @@ const App: React.FC = () => {
                 <div className="w-full max-w-xl bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8 space-y-4 text-center">
                     <h2 className="text-2xl font-bold text-slate-800 dark:text-white">Supabase接続設定が必要です</h2>
                     <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                        データベースと認証を利用するには、プロジェクトルートの <code className="font-mono px-1 py-0.5 bg-slate-100 dark:bg-slate-900 rounded">supabaseCredentials.ts</code> に
-                        SupabaseのURLとAnon Keyを設定してください。
+                        データベースと認証を利用するには、環境変数 <code className="font-mono px-1 py-0.5 bg-slate-100 dark:bg-slate-900 rounded">VITE_SUPABASE_URL</code> と{' '}
+                        <code className="font-mono px-1 py-0.5 bg-slate-100 dark:bg-slate-900 rounded">VITE_SUPABASE_ANON_KEY</code> を設定してください。
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Supabaseダッシュボードの「Project Settings &gt; API」で確認できます。
+                        値はSupabaseダッシュボードの「Project Settings &gt; API」で確認できます。service_role や secret key は使用しないでください。
                     </p>
                     <button
                         type="button"
