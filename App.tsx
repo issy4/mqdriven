@@ -1773,7 +1773,6 @@ const App: React.FC = () => {
             case 'sales_pipeline':
                 return <SalesPipelinePage jobs={jobs || []} onUpdateJob={handleUpdateJob} onCardClick={(job) => { setSelectedJob(job); setJobDetailModalOpen(true); }} />;
             case 'sales_billing':
-                return <BillingManagement jobs={jobs || []} onRefreshData={loadAllData} onMarkPaid={async (invoice) => { addToast('入金処理を実行しました。', 'success'); loadAllData(); }} />;
             case 'legacy_billing':
                 return <LegacyInvoiceBillingPage />;
             case 'project_management':
