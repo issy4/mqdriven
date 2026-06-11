@@ -1,0 +1,1016 @@
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { getSupabase } from '../../services/supabaseClient';
+import {
+    FileText,
+    Loader,
+    X,
+    Send,
+    Mail,
+    Settings,
+    CheckCircle,
+    Clock,
+    Search,
+    RefreshCw,
+    Edit,
+    Plus,
+    Building,
+} from '../Icons';
+
+// ---------------------------------------------------------------------------
+// Types (aligned with Supabase legacy + management tables)
+// ---------------------------------------------------------------------------
+
+interface CustomerRow {
+    id: string;
+    customer_code: string | null;
+    customer_name: string | null;
+    post_no: string | null;
+    address_1: string | null;
+    address_2: string | null;
+    closing_day: string | null;
+    pay_day: string | null;
+    bill_payment_day: string | null;
+}
+
+interface InvoiceLegacyRow {
+    row_uuid: string;
+    invoice_id: string | null;
+    customer_uuid: string | null;
+    delivery_date: string | null;
+    specification: string | null;
+    subtotal: string | null;
+    consumption: string | null;
+    total: string | null;
+    note: string | null;
+    pattern_name: string | null;
+    status: string | null;
+}
+
+interface InvoiceDetailRow {
+    row_uuid: string;
+    invoice_uuid: string | null;
+    record_no: string | null;
+    major_item: string | null;
+    medium_item: string | null;
+    detail: string | null;
+    quantity: string | null;
+    unit_price: string | null;
+    tax_rate: string | null;
+}
+
+interface IssueRecordRow {
+    id: string;
+    legacy_invoice_id: string | null;
+    invoice_no: string | null;
+    issue_status: string | null;
+    issued_at: string | null;
+    issue_count: number | null;
+}
+
+interface DeliveryRecordRow {
+    id: string;
+    legacy_invoice_id: string | null;
+    delivery_method: string | null;
+    delivery_status: string | null;
+    to_email: string | null;
+    sent_at: string | null;
+}
+
+interface PaymentMatchRow {
+    id: string;
+    legacy_invoice_id: string | null;
+    expected_amount: number | null;
+    paid_amount: number | null;
+    balance_amount: number | null;
+    payment_status: string | null;
+    payment_date: string | null;
+}
+
+interface BillingSettingRow {
+    id: string;
+    customer_id: string | null;
+    customer_code: string | null;
+    customer_name: string | null;
+    delivery_method: string | null;
+    billing_email: string | null;
+    billing_cc: string | null;
+    billing_bcc: string | null;
+    email_subject_template: string | null;
+    email_body_template: string | null;
+    requires_manual_review: boolean | null;
+    notes: string | null;
+    is_active: boolean | null;
+}
+
+// Combined row used for the list view
+interface CombinedInvoice {
+    invoice: InvoiceLegacyRow;
+    customer: CustomerRow | null;
+    issue: IssueRecordRow | null;
+    delivery: DeliveryRecordRow | null;
+    payment: PaymentMatchRow | null;
+}
+
+type Tab = 'unissued' | 'issued' | 'pending_send' | 'sent' | 'paid' | 'settings';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const JPY = (n: number | string | null | undefined) => {
+    const num = typeof n === 'string' ? parseFloat(n) : n;
+    if (num === null || num === undefined || Number.isNaN(num)) return '¥0';
+    return new Intl.NumberFormat('ja-JP', {
+        style: 'currency',
+        currency: 'JPY',
+        maximumFractionDigits: 0,
+    }).format(Math.round(num));
+};
+
+const numOf = (v: string | number | null | undefined): number => {
+    if (v === null || v === undefined) return 0;
+    const n = typeof v === 'string' ? parseFloat(v) : v;
+    return Number.isNaN(n) ? 0 : n;
+};
+
+const formatDate = (v: string | null | undefined): string => {
+    if (!v) return '—';
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return v;
+    return d.toLocaleDateString('ja-JP');
+};
+
+const customerAddress = (c: CustomerRow | null): string => {
+    if (!c) return '—';
+    const parts = [c.post_no ? `〒${c.post_no}` : '', c.address_1 || '', c.address_2 || ''].filter(Boolean);
+    return parts.length ? parts.join(' ') : '—';
+};
+
+const STATUS_LABELS: Record<string, string> = {
+    // issue
+    not_issued: '未発行',
+    issued: '発行済み',
+    // delivery
+    pending: '送信待ち',
+    sent: '送信済み',
+    failed: '送信失敗',
+    // payment
+    unpaid: '未入金',
+    partial: '一部入金',
+    paid: '入金確認',
+};
+
+const StatusBadge: React.FC<{ status: string | null | undefined; kind: 'issue' | 'delivery' | 'payment' }> = ({
+    status,
+    kind,
+}) => {
+    if (!status) {
+        const fallback = kind === 'issue' ? '未発行' : kind === 'delivery' ? '未送信' : '未入金';
+        return (
+            <span className="px-2.5 py-0.5 text-xs font-medium rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                {fallback}
+            </span>
+        );
+    }
+    const label = STATUS_LABELS[status] || status;
+    const tone =
+        status === 'issued' || status === 'sent' || status === 'paid'
+            ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+            : status === 'failed'
+              ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+              : status === 'partial' || status === 'pending'
+                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300'
+                : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
+    return <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${tone}`}>{label}</span>;
+};
+
+// ---------------------------------------------------------------------------
+// Detail Modal
+// ---------------------------------------------------------------------------
+
+const InvoiceDetailModal: React.FC<{
+    combined: CombinedInvoice;
+    onClose: () => void;
+}> = ({ combined, onClose }) => {
+    const { invoice, customer } = combined;
+    const [details, setDetails] = useState<InvoiceDetailRow[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+        const load = async () => {
+            setIsLoading(true);
+            try {
+                const supabase = getSupabase();
+                const { data, error } = await supabase
+                    .from('invoice_details_legacy')
+                    .select(
+                        'row_uuid, invoice_uuid, record_no, major_item, medium_item, detail, quantity, unit_price, tax_rate',
+                    )
+                    .eq('invoice_uuid', invoice.row_uuid);
+                if (error) throw error;
+                if (!cancelled) {
+                    const sorted = (data || []).slice().sort((a, b) => numOf(a.record_no) - numOf(b.record_no));
+                    setDetails(sorted);
+                }
+            } catch (e) {
+                console.error('[v0] failed to load invoice details', e);
+            } finally {
+                if (!cancelled) setIsLoading(false);
+            }
+        };
+        load();
+        return () => {
+            cancelled = true;
+        };
+    }, [invoice.row_uuid]);
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+                <div className="flex justify-between items-center p-6 border-b border-slate-200 dark:border-slate-700">
+                    <div>
+                        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">請求書詳細</h2>
+                        <p className="text-sm text-slate-500">請求番号: {invoice.invoice_id || '—'}</p>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                        aria-label="閉じる"
+                    >
+                        <X className="w-6 h-6" />
+                    </button>
+                </div>
+                <div className="p-6 overflow-y-auto">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                        <div>
+                            <p className="text-sm font-medium text-slate-500">顧客名</p>
+                            <p className="font-semibold text-slate-900 dark:text-white">
+                                {customer?.customer_name || '—'}
+                            </p>
+                            <p className="text-sm text-slate-500 mt-1">{customerAddress(customer)}</p>
+                        </div>
+                        <div className="sm:text-right">
+                            <p className="text-sm font-medium text-slate-500">納品日</p>
+                            <p className="font-semibold text-slate-900 dark:text-white">
+                                {formatDate(invoice.delivery_date)}
+                            </p>
+                            <p className="text-sm text-slate-500 mt-1">締日: {customer?.closing_day || '—'} / 支払日: {customer?.pay_day || customer?.bill_payment_day || '—'}</p>
+                        </div>
+                    </div>
+
+                    {invoice.specification && (
+                        <div className="mb-4 text-sm">
+                            <span className="font-medium text-slate-500">仕様: </span>
+                            <span className="text-slate-700 dark:text-slate-300">{invoice.specification}</span>
+                        </div>
+                    )}
+
+                    <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-lg">
+                        <table className="w-full text-sm text-left">
+                            <thead className="text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-700/50">
+                                <tr>
+                                    <th className="px-3 py-2">No</th>
+                                    <th className="px-3 py-2">大項目</th>
+                                    <th className="px-3 py-2">中項目</th>
+                                    <th className="px-3 py-2">明細</th>
+                                    <th className="px-3 py-2 text-right">数量</th>
+                                    <th className="px-3 py-2 text-right">単価</th>
+                                    <th className="px-3 py-2 text-right">税率</th>
+                                    <th className="px-3 py-2 text-right">金額</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {isLoading ? (
+                                    <tr>
+                                        <td colSpan={8} className="text-center p-10">
+                                            <Loader className="w-6 h-6 animate-spin mx-auto text-slate-400" />
+                                        </td>
+                                    </tr>
+                                ) : details.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={8} className="text-center p-10 text-slate-500">
+                                            明細データがありません。
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    details.map((d) => {
+                                        const amount = numOf(d.quantity) * numOf(d.unit_price);
+                                        return (
+                                            <tr
+                                                key={d.row_uuid}
+                                                className="border-t border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300"
+                                            >
+                                                <td className="px-3 py-2">{d.record_no || '—'}</td>
+                                                <td className="px-3 py-2">{d.major_item || '—'}</td>
+                                                <td className="px-3 py-2">{d.medium_item || '—'}</td>
+                                                <td className="px-3 py-2">{d.detail || '—'}</td>
+                                                <td className="px-3 py-2 text-right">{numOf(d.quantity).toLocaleString()}</td>
+                                                <td className="px-3 py-2 text-right">{JPY(d.unit_price)}</td>
+                                                <td className="px-3 py-2 text-right">{d.tax_rate ? `${d.tax_rate}%` : '—'}</td>
+                                                <td className="px-3 py-2 text-right font-medium">{JPY(amount)}</td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="mt-4 flex justify-end">
+                        <div className="w-64 space-y-2">
+                            <div className="flex justify-between">
+                                <span className="text-slate-500">小計</span>
+                                <span className="text-slate-900 dark:text-white">{JPY(invoice.subtotal)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-500">消費税</span>
+                                <span className="text-slate-900 dark:text-white">{JPY(invoice.consumption)}</span>
+                            </div>
+                            <div className="flex justify-between font-bold text-lg border-t border-slate-200 dark:border-slate-700 pt-2 mt-2">
+                                <span className="text-slate-900 dark:text-white">合計</span>
+                                <span className="text-slate-900 dark:text-white">{JPY(invoice.total)}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="p-6 border-t border-slate-200 dark:border-slate-700 flex flex-wrap justify-end gap-3">
+                    <div className="flex items-center gap-2 mr-auto">
+                        <StatusBadge status={combined.issue?.issue_status} kind="issue" />
+                        <StatusBadge status={combined.delivery?.delivery_status} kind="delivery" />
+                        <StatusBadge status={combined.payment?.payment_status} kind="payment" />
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600"
+                    >
+                        閉じる
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// Customer Billing Settings Modal
+// ---------------------------------------------------------------------------
+
+const emptySetting = (): Partial<BillingSettingRow> => ({
+    customer_code: '',
+    customer_name: '',
+    delivery_method: 'email',
+    billing_email: '',
+    billing_cc: '',
+    billing_bcc: '',
+    email_subject_template: '',
+    email_body_template: '',
+    requires_manual_review: false,
+    notes: '',
+    is_active: true,
+});
+
+const BillingSettingModal: React.FC<{
+    setting: Partial<BillingSettingRow> | null;
+    onClose: () => void;
+    onSaved: () => void;
+}> = ({ setting, onClose, onSaved }) => {
+    const [form, setForm] = useState<Partial<BillingSettingRow>>(setting || emptySetting());
+    const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const update = (key: keyof BillingSettingRow, value: string | boolean) =>
+        setForm((prev) => ({ ...prev, [key]: value }));
+
+    const handleSave = async () => {
+        if (!form.customer_code && !form.customer_name) {
+            setError('顧客コードまたは顧客名を入力してください。');
+            return;
+        }
+        setIsSaving(true);
+        setError(null);
+        try {
+            const supabase = getSupabase();
+            const payload = {
+                customer_id: form.customer_id ?? null,
+                customer_code: form.customer_code || null,
+                customer_name: form.customer_name || null,
+                delivery_method: form.delivery_method || null,
+                billing_email: form.billing_email || null,
+                billing_cc: form.billing_cc || null,
+                billing_bcc: form.billing_bcc || null,
+                email_subject_template: form.email_subject_template || null,
+                email_body_template: form.email_body_template || null,
+                requires_manual_review: !!form.requires_manual_review,
+                notes: form.notes || null,
+                is_active: form.is_active ?? true,
+            };
+            if (form.id) {
+                const { error } = await supabase.from('customer_billing_settings').update(payload).eq('id', form.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('customer_billing_settings').insert(payload);
+                if (error) throw error;
+            }
+            onSaved();
+        } catch (e) {
+            console.error('[v0] failed to save billing setting', e);
+            setError(e instanceof Error ? e.message : '保存に失敗しました。');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const inputClass =
+        'w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500';
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+                <div className="flex justify-between items-center p-6 border-b border-slate-200 dark:border-slate-700">
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                        {form.id ? '顧客別請求設定の編集' : '顧客別請求設定の新規登録'}
+                    </h2>
+                    <button
+                        onClick={onClose}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                        aria-label="閉じる"
+                    >
+                        <X className="w-6 h-6" />
+                    </button>
+                </div>
+                <div className="p-6 overflow-y-auto space-y-4">
+                    {error && (
+                        <div className="rounded-lg bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-4 py-2 text-sm">
+                            {error}
+                        </div>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                                顧客コード
+                            </label>
+                            <input
+                                className={inputClass}
+                                value={form.customer_code || ''}
+                                onChange={(e) => update('customer_code', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                                顧客名
+                            </label>
+                            <input
+                                className={inputClass}
+                                value={form.customer_name || ''}
+                                onChange={(e) => update('customer_name', e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                            送信方法
+                        </label>
+                        <select
+                            className={inputClass}
+                            value={form.delivery_method || 'email'}
+                            onChange={(e) => update('delivery_method', e.target.value)}
+                        >
+                            <option value="email">メール</option>
+                            <option value="post">郵送</option>
+                            <option value="manual">手動</option>
+                        </select>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                                請求先メール
+                            </label>
+                            <input
+                                className={inputClass}
+                                value={form.billing_email || ''}
+                                onChange={(e) => update('billing_email', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                                CC
+                            </label>
+                            <input
+                                className={inputClass}
+                                value={form.billing_cc || ''}
+                                onChange={(e) => update('billing_cc', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                                BCC
+                            </label>
+                            <input
+                                className={inputClass}
+                                value={form.billing_bcc || ''}
+                                onChange={(e) => update('billing_bcc', e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                            メール件名テンプレート
+                        </label>
+                        <input
+                            className={inputClass}
+                            value={form.email_subject_template || ''}
+                            onChange={(e) => update('email_subject_template', e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                            メール本文テンプレート
+                        </label>
+                        <textarea
+                            className={`${inputClass} min-h-[100px]`}
+                            value={form.email_body_template || ''}
+                            onChange={(e) => update('email_body_template', e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                            備考
+                        </label>
+                        <textarea
+                            className={`${inputClass} min-h-[60px]`}
+                            value={form.notes || ''}
+                            onChange={(e) => update('notes', e.target.value)}
+                        />
+                    </div>
+                    <div className="flex items-center gap-6">
+                        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                            <input
+                                type="checkbox"
+                                checked={!!form.requires_manual_review}
+                                onChange={(e) => update('requires_manual_review', e.target.checked)}
+                            />
+                            手動確認が必要
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                            <input
+                                type="checkbox"
+                                checked={form.is_active ?? true}
+                                onChange={(e) => update('is_active', e.target.checked)}
+                            />
+                            有効
+                        </label>
+                    </div>
+                </div>
+                <div className="p-6 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+                    <button
+                        onClick={onClose}
+                        className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600"
+                    >
+                        キャンセル
+                    </button>
+                    <button
+                        onClick={handleSave}
+                        disabled={isSaving}
+                        className="flex items-center gap-2 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-slate-400"
+                    >
+                        {isSaving ? <Loader className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                        保存
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// Main Page
+// ---------------------------------------------------------------------------
+
+const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
+    { id: 'unissued', label: '未発行', icon: FileText },
+    { id: 'issued', label: '発行済み', icon: CheckCircle },
+    { id: 'pending_send', label: '送信待ち', icon: Clock },
+    { id: 'sent', label: '送信済み', icon: Send },
+    { id: 'paid', label: '入金確認', icon: Mail },
+    { id: 'settings', label: '顧客別設定', icon: Settings },
+];
+
+const LegacyInvoiceBillingPage: React.FC = () => {
+    const [activeTab, setActiveTab] = useState<Tab>('unissued');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const [invoices, setInvoices] = useState<InvoiceLegacyRow[]>([]);
+    const [customers, setCustomers] = useState<Record<string, CustomerRow>>({});
+    const [issues, setIssues] = useState<Record<string, IssueRecordRow>>({});
+    const [deliveries, setDeliveries] = useState<Record<string, DeliveryRecordRow>>({});
+    const [payments, setPayments] = useState<Record<string, PaymentMatchRow>>({});
+
+    const [settings, setSettings] = useState<BillingSettingRow[]>([]);
+    const [editingSetting, setEditingSetting] = useState<Partial<BillingSettingRow> | null>(null);
+
+    const [selected, setSelected] = useState<CombinedInvoice | null>(null);
+
+    const loadInvoiceData = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const supabase = getSupabase();
+            const [invRes, custRes, issueRes, delRes, payRes] = await Promise.all([
+                supabase
+                    .from('invoices_legacy')
+                    .select(
+                        'row_uuid, invoice_id, customer_uuid, delivery_date, specification, subtotal, consumption, total, note, pattern_name, status',
+                    )
+                    .order('delivery_date', { ascending: false })
+                    .limit(500),
+                supabase
+                    .from('customers')
+                    .select('id, customer_code, customer_name, post_no, address_1, address_2, closing_day, pay_day, bill_payment_day'),
+                supabase
+                    .from('invoice_issue_records')
+                    .select('id, legacy_invoice_id, invoice_no, issue_status, issued_at, issue_count'),
+                supabase
+                    .from('invoice_delivery_records')
+                    .select('id, legacy_invoice_id, delivery_method, delivery_status, to_email, sent_at'),
+                supabase
+                    .from('invoice_payment_matches')
+                    .select('id, legacy_invoice_id, expected_amount, paid_amount, balance_amount, payment_status, payment_date'),
+            ]);
+
+            if (invRes.error) throw invRes.error;
+            if (custRes.error) throw custRes.error;
+            if (issueRes.error) throw issueRes.error;
+            if (delRes.error) throw delRes.error;
+            if (payRes.error) throw payRes.error;
+
+            setInvoices((invRes.data as InvoiceLegacyRow[]) || []);
+
+            const custMap: Record<string, CustomerRow> = {};
+            ((custRes.data as CustomerRow[]) || []).forEach((c) => {
+                custMap[c.id] = c;
+            });
+            setCustomers(custMap);
+
+            const issueMap: Record<string, IssueRecordRow> = {};
+            ((issueRes.data as IssueRecordRow[]) || []).forEach((r) => {
+                if (r.legacy_invoice_id) issueMap[r.legacy_invoice_id] = r;
+            });
+            setIssues(issueMap);
+
+            const delMap: Record<string, DeliveryRecordRow> = {};
+            ((delRes.data as DeliveryRecordRow[]) || []).forEach((r) => {
+                if (r.legacy_invoice_id) delMap[r.legacy_invoice_id] = r;
+            });
+            setDeliveries(delMap);
+
+            const payMap: Record<string, PaymentMatchRow> = {};
+            ((payRes.data as PaymentMatchRow[]) || []).forEach((r) => {
+                if (r.legacy_invoice_id) payMap[r.legacy_invoice_id] = r;
+            });
+            setPayments(payMap);
+        } catch (e) {
+            console.error('[v0] failed to load legacy invoices', e);
+            setError(e instanceof Error ? e.message : '請求データの取得に失敗しました。');
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    const loadSettings = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const supabase = getSupabase();
+            const { data, error } = await supabase
+                .from('customer_billing_settings')
+                .select(
+                    'id, customer_id, customer_code, customer_name, delivery_method, billing_email, billing_cc, billing_bcc, email_subject_template, email_body_template, requires_manual_review, notes, is_active',
+                )
+                .order('customer_code', { ascending: true });
+            if (error) throw error;
+            setSettings((data as BillingSettingRow[]) || []);
+        } catch (e) {
+            console.error('[v0] failed to load billing settings', e);
+            setError(e instanceof Error ? e.message : '顧客別設定の取得に失敗しました。');
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (activeTab === 'settings') {
+            loadSettings();
+        } else {
+            loadInvoiceData();
+        }
+    }, [activeTab, loadInvoiceData, loadSettings]);
+
+    const combinedInvoices = useMemo<CombinedInvoice[]>(() => {
+        return invoices.map((invoice) => {
+            const key = invoice.invoice_id || '';
+            return {
+                invoice,
+                customer: invoice.customer_uuid ? customers[invoice.customer_uuid] || null : null,
+                issue: key ? issues[key] || null : null,
+                delivery: key ? deliveries[key] || null : null,
+                payment: key ? payments[key] || null : null,
+            };
+        });
+    }, [invoices, customers, issues, deliveries, payments]);
+
+    const filteredInvoices = useMemo(() => {
+        let rows = combinedInvoices;
+
+        // Tab filtering
+        if (activeTab === 'unissued') {
+            rows = rows.filter((r) => !r.issue || r.issue.issue_status !== 'issued');
+        } else if (activeTab === 'issued') {
+            rows = rows.filter((r) => r.issue?.issue_status === 'issued');
+        } else if (activeTab === 'pending_send') {
+            rows = rows.filter(
+                (r) => r.issue?.issue_status === 'issued' && (!r.delivery || r.delivery.delivery_status === 'pending'),
+            );
+        } else if (activeTab === 'sent') {
+            rows = rows.filter((r) => r.delivery?.delivery_status === 'sent');
+        } else if (activeTab === 'paid') {
+            rows = rows.filter((r) => r.payment?.payment_status === 'paid' || r.payment?.payment_status === 'partial');
+        }
+
+        // Search
+        if (searchTerm.trim()) {
+            const q = searchTerm.trim().toLowerCase();
+            rows = rows.filter((r) => {
+                return (
+                    (r.invoice.invoice_id || '').toLowerCase().includes(q) ||
+                    (r.customer?.customer_code || '').toLowerCase().includes(q) ||
+                    (r.customer?.customer_name || '').toLowerCase().includes(q)
+                );
+            });
+        }
+
+        return rows;
+    }, [combinedInvoices, activeTab, searchTerm]);
+
+    const filteredSettings = useMemo(() => {
+        if (!searchTerm.trim()) return settings;
+        const q = searchTerm.trim().toLowerCase();
+        return settings.filter(
+            (s) =>
+                (s.customer_code || '').toLowerCase().includes(q) ||
+                (s.customer_name || '').toLowerCase().includes(q),
+        );
+    }, [settings, searchTerm]);
+
+    const handleRefresh = () => {
+        if (activeTab === 'settings') loadSettings();
+        else loadInvoiceData();
+    };
+
+    return (
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300">
+                            <FileText className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold text-slate-900 dark:text-white">請求書発行・送信管理（基幹連携）</h1>
+                            <p className="text-sm text-slate-500">
+                                基幹SQL Serverから同期された請求データ（invoices_legacy）を元にした BtoB 請求管理
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={handleRefresh}
+                        className="flex items-center gap-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium py-2 px-3 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600"
+                    >
+                        <RefreshCw className="w-4 h-4" />
+                        再読込
+                    </button>
+                </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="px-6 border-b border-slate-200 dark:border-slate-700">
+                <nav className="-mb-px flex flex-wrap gap-x-6">
+                    {TABS.map((tab) => {
+                        const Icon = tab.icon;
+                        const isActive = activeTab === tab.id;
+                        return (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`whitespace-nowrap py-4 px-1 border-b-2 font-semibold text-sm transition-colors flex items-center gap-2 ${
+                                    isActive
+                                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                                        : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                }`}
+                            >
+                                <Icon className="w-4 h-4" />
+                                {tab.label}
+                            </button>
+                        );
+                    })}
+                </nav>
+            </div>
+
+            {/* Toolbar */}
+            <div className="p-4 flex flex-wrap items-center justify-between gap-3 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                <div className="relative flex-1 min-w-[220px] max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder={activeTab === 'settings' ? '顧客コード / 顧客名で検索...' : '請求番号 / 顧客で検索...'}
+                        className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 pl-9 pr-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                </div>
+                {activeTab === 'settings' && (
+                    <button
+                        onClick={() => setEditingSetting(emptySetting())}
+                        className="flex items-center gap-2 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700"
+                    >
+                        <Plus className="w-5 h-5" />
+                        新規登録
+                    </button>
+                )}
+            </div>
+
+            {/* Error */}
+            {error && (
+                <div className="m-4 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-4 py-3 text-sm">
+                    {error}
+                </div>
+            )}
+
+            {/* Content */}
+            {activeTab === 'settings' ? (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
+                        <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
+                            <tr>
+                                <th className="px-6 py-3">顧客コード</th>
+                                <th className="px-6 py-3">顧客名</th>
+                                <th className="px-6 py-3">送信方法</th>
+                                <th className="px-6 py-3">請求先メール</th>
+                                <th className="px-6 py-3 text-center">手動確認</th>
+                                <th className="px-6 py-3 text-center">状態</th>
+                                <th className="px-6 py-3 text-right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {isLoading ? (
+                                <tr>
+                                    <td colSpan={7} className="text-center p-16">
+                                        <Loader className="w-8 h-8 animate-spin mx-auto text-slate-400" />
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredSettings.map((s) => (
+                                    <tr
+                                        key={s.id}
+                                        className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50/50 dark:hover:bg-slate-700/30"
+                                    >
+                                        <td className="px-6 py-4 font-mono text-slate-900 dark:text-white">
+                                            {s.customer_code || '—'}
+                                        </td>
+                                        <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">
+                                            {s.customer_name || '—'}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {s.delivery_method === 'email'
+                                                ? 'メール'
+                                                : s.delivery_method === 'post'
+                                                  ? '郵送'
+                                                  : s.delivery_method === 'manual'
+                                                    ? '手動'
+                                                    : s.delivery_method || '—'}
+                                        </td>
+                                        <td className="px-6 py-4">{s.billing_email || '—'}</td>
+                                        <td className="px-6 py-4 text-center">
+                                            {s.requires_manual_review ? '要' : '—'}
+                                        </td>
+                                        <td className="px-6 py-4 text-center">
+                                            <span
+                                                className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${
+                                                    s.is_active
+                                                        ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+                                                        : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                                                }`}
+                                            >
+                                                {s.is_active ? '有効' : '無効'}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <button
+                                                onClick={() => setEditingSetting(s)}
+                                                className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
+                                            >
+                                                <Edit className="w-4 h-4" />
+                                                編集
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                    {!isLoading && filteredSettings.length === 0 && (
+                        <div className="p-16 text-center text-slate-500">
+                            <Building className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+                            顧客別請求設定が登録されていません。
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
+                        <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
+                            <tr>
+                                <th className="px-4 py-3">請求番号</th>
+                                <th className="px-4 py-3">顧客コード</th>
+                                <th className="px-4 py-3">顧客名</th>
+                                <th className="px-4 py-3">納品日</th>
+                                <th className="px-4 py-3">仕様</th>
+                                <th className="px-4 py-3 text-right">小計</th>
+                                <th className="px-4 py-3 text-right">消費税</th>
+                                <th className="px-4 py-3 text-right">合計</th>
+                                <th className="px-4 py-3 text-center">発行</th>
+                                <th className="px-4 py-3 text-center">送信</th>
+                                <th className="px-4 py-3 text-center">入金</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {isLoading ? (
+                                <tr>
+                                    <td colSpan={11} className="text-center p-16">
+                                        <Loader className="w-8 h-8 animate-spin mx-auto text-slate-400" />
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredInvoices.map((row) => (
+                                    <tr
+                                        key={row.invoice.row_uuid}
+                                        onClick={() => setSelected(row)}
+                                        className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 cursor-pointer"
+                                    >
+                                        <td className="px-4 py-3 font-mono text-slate-900 dark:text-white">
+                                            {row.invoice.invoice_id || '—'}
+                                        </td>
+                                        <td className="px-4 py-3">{row.customer?.customer_code || '—'}</td>
+                                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
+                                            {row.customer?.customer_name || '—'}
+                                        </td>
+                                        <td className="px-4 py-3">{formatDate(row.invoice.delivery_date)}</td>
+                                        <td className="px-4 py-3 max-w-[180px] truncate" title={row.invoice.specification || ''}>
+                                            {row.invoice.specification || '—'}
+                                        </td>
+                                        <td className="px-4 py-3 text-right">{JPY(row.invoice.subtotal)}</td>
+                                        <td className="px-4 py-3 text-right">{JPY(row.invoice.consumption)}</td>
+                                        <td className="px-4 py-3 text-right font-semibold text-slate-900 dark:text-white">
+                                            {JPY(row.invoice.total)}
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <StatusBadge status={row.issue?.issue_status} kind="issue" />
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <StatusBadge status={row.delivery?.delivery_status} kind="delivery" />
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <StatusBadge status={row.payment?.payment_status} kind="payment" />
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                    {!isLoading && filteredInvoices.length === 0 && (
+                        <div className="p-16 text-center text-slate-500">
+                            <FileText className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+                            該当する請求データがありません。
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {selected && <InvoiceDetailModal combined={selected} onClose={() => setSelected(null)} />}
+            {editingSetting && (
+                <BillingSettingModal
+                    setting={editingSetting}
+                    onClose={() => setEditingSetting(null)}
+                    onSaved={() => {
+                        setEditingSetting(null);
+                        loadSettings();
+                    }}
+                />
+            )}
+        </div>
+    );
+};
+
+export default React.memo(LegacyInvoiceBillingPage);
