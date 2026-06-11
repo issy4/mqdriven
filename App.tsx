@@ -231,6 +231,7 @@ import SalesPipelinePage from './components/sales/SalesPipelinePage';
 import ProjectManagementPage from './components/projects/ProjectManagementPage';
 import SettingsPage from './components/SettingsPage';
 import BillingManagement from './components/accounting/BillingManagement';
+import LegacyInvoiceBillingPage from './components/billing/LegacyInvoiceBillingPage';
 import PaymentManagement from './components/accounting/PaymentManagement';
 import LaborCostManagement from './components/accounting/LaborCostManagement';
 import TrialBalancePage from './components/accounting/TrialBalancePage';
@@ -319,6 +320,7 @@ const PAGE_TITLES: Record<Page, string> = {
     sales_orders: '受発注管理',
     project_management: 'プロジェクト管理',
     sales_billing: '請求管理',
+    legacy_billing: '請求書発行・送信管理',
     analysis_ranking: 'ランキング分析',
     purchasing_orders: '発注管理',
     purchasing_invoices: '請求書インポート',
@@ -441,7 +443,7 @@ const GlobalErrorBanner: React.FC<{ error: string; onRetry: () => void; onShowSe
         <div className="flex items-center gap-2">
             <button onClick={onShowSetup} className="bg-red-700 hover:bg-red-800 font-semibold text-sm py-1.5 px-3 rounded-md flex items-center gap-1.5 transition-colors">
                 <Settings className="w-4 h-4" />
-                セットアップガイド
+                セ���トアップガイド
             </button>
             <button onClick={onRetry} className="bg-red-700 hover:bg-red-800 font-semibold text-sm py-1.5 px-3 rounded-md flex items-center gap-1.5 transition-colors">
                 <RefreshCw className="w-4 h-4" />
@@ -1772,6 +1774,8 @@ const App: React.FC = () => {
                 return <SalesPipelinePage jobs={jobs || []} onUpdateJob={handleUpdateJob} onCardClick={(job) => { setSelectedJob(job); setJobDetailModalOpen(true); }} />;
             case 'sales_billing':
                 return <BillingManagement jobs={jobs || []} onRefreshData={loadAllData} onMarkPaid={async (invoice) => { addToast('入金処理を実行しました。', 'success'); loadAllData(); }} />;
+            case 'legacy_billing':
+                return <LegacyInvoiceBillingPage />;
             case 'project_management':
                 return <ProjectManagementPage projects={projects || []} onRefresh={loadAllData} isLoading={isLoading} />;
             case 'purchasing_payments':

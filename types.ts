@@ -4,7 +4,7 @@
 export type Page =
   | 'analysis_dashboard'
   | 'sales_dashboard' | 'sales_leads' | 'sales_customers' | 'sales_customers_chart' | 'sales_pipeline'
-  | 'sales_estimates' | 'quote_center' | 'sales_orders' | 'project_management' | 'sales_billing' | 'analysis_ranking'
+  | 'sales_estimates' | 'quote_center' | 'sales_orders' | 'project_management' | 'sales_billing' | 'legacy_billing' | 'analysis_ranking'
   | 'purchasing_orders' | 'purchasing_invoices' | 'purchasing_payments'
   | 'inventory_management' | 'manufacturing_orders' | 'manufacturing_progress' | 'manufacturing_cost'
   | 'hr_attendance' | 'hr_man_hours' | 'hr_labor_cost'
@@ -1381,7 +1381,7 @@ export interface QuoteFormData {
   binding: string;
   quantity: number;
   markup: number;
-  specialProcessing?: string; // 特殊加工選択
+  specialProcessing?: string; // 特殊加工選���
   rawInput?: string;
   imageInput?: string;
 }
