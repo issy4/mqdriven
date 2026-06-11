@@ -230,7 +230,6 @@ import FaxOcrIntakePage from './components/sales/FaxOcrIntakePage';
 import SalesPipelinePage from './components/sales/SalesPipelinePage';
 import ProjectManagementPage from './components/projects/ProjectManagementPage';
 import SettingsPage from './components/SettingsPage';
-import BillingManagement from './components/accounting/BillingManagement';
 import LegacyInvoiceBillingPage from './components/billing/LegacyInvoiceBillingPage';
 import PaymentManagement from './components/accounting/PaymentManagement';
 import LaborCostManagement from './components/accounting/LaborCostManagement';
