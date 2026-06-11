@@ -32,6 +32,15 @@ interface CustomerRow {
     bill_payment_day: string | null;
 }
 
+interface CustomerSearchResult {
+    id: string;
+    customer_code: string | null;
+    customer_name: string | null;
+    post_no: string | null;
+    address_1: string | null;
+    address_2: string | null;
+}
+
 interface ProjectLegacyRow {
     id: string;
     project_id: string | null;
@@ -167,7 +176,7 @@ const formatDate = (v: string | null | undefined): string => {
     return d.toLocaleDateString('ja-JP');
 };
 
-const customerAddress = (c: CustomerRow | null): string => {
+const customerAddress = (c: CustomerRow | CustomerSearchResult | null): string => {
     if (!c) return '—';
 
     const parts = [
@@ -512,6 +521,7 @@ const InvoiceDetailModal: React.FC<{
 // ---------------------------------------------------------------------------
 
 const emptySetting = (): Partial<BillingSettingRow> => ({
+    customer_id: null,
     customer_code: '',
     customer_name: '',
     delivery_method: 'email',
@@ -531,17 +541,112 @@ const BillingSettingModal: React.FC<{
     onClose: () => void;
     onSaved: () => void;
 }> = ({ setting, onClose, onSaved }) => {
-    const [form, setForm] = useState<Partial<BillingSettingRow>>(setting || emptySetting());
+    const initialSetting = setting || emptySetting();
+
+    const [form, setForm] = useState<Partial<BillingSettingRow>>(initialSetting);
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const update = (key: keyof BillingSettingRow, value: string | boolean) => {
+    const [customerSearchTerm, setCustomerSearchTerm] = useState(
+        `${initialSetting.customer_code || ''} ${initialSetting.customer_name || ''}`.trim(),
+    );
+    const [customerSearchResults, setCustomerSearchResults] = useState<CustomerSearchResult[]>([]);
+    const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
+    const [selectedCustomer, setSelectedCustomer] = useState<CustomerSearchResult | null>(
+        initialSetting.customer_id
+            ? {
+                  id: initialSetting.customer_id,
+                  customer_code: initialSetting.customer_code || null,
+                  customer_name: initialSetting.customer_name || null,
+                  post_no: null,
+                  address_1: null,
+                  address_2: null,
+              }
+            : null,
+    );
+
+    const update = (key: keyof BillingSettingRow, value: string | boolean | null) => {
         setForm((prev) => ({ ...prev, [key]: value }));
     };
 
+    const inputClass =
+        'w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500';
+
+    const searchCustomers = async () => {
+        const q = customerSearchTerm.trim();
+
+        if (!q) {
+            setCustomerSearchResults([]);
+            setError('顧客コードまたは顧客名を入力して検索してください。');
+            return;
+        }
+
+        setIsSearchingCustomer(true);
+        setError(null);
+
+        try {
+            const supabase = getSupabase();
+
+            const safeKeyword = q.replace(/[%_]/g, '');
+            const { data, error } = await supabase
+                .from('customers')
+                .select('id, customer_code, customer_name, post_no, address_1, address_2')
+                .or(`customer_code.ilike.%${safeKeyword}%,customer_name.ilike.%${safeKeyword}%`)
+                .order('customer_code', { ascending: true })
+                .limit(20);
+
+            if (error) {
+                logSupabaseError('customers search', error);
+                throw error;
+            }
+
+            setCustomerSearchResults((data || []) as CustomerSearchResult[]);
+
+            if (!data || data.length === 0) {
+                setError('該当する顧客が見つかりませんでした。');
+            }
+        } catch (e) {
+            console.error('[LegacyInvoiceBillingPage] failed to search customers', e);
+            setError(e instanceof Error ? e.message : '顧客検索に失敗しました。');
+        } finally {
+            setIsSearchingCustomer(false);
+        }
+    };
+
+    const selectCustomer = (customer: CustomerSearchResult) => {
+        setSelectedCustomer(customer);
+        setCustomerSearchResults([]);
+        setCustomerSearchTerm(`${customer.customer_code || ''} ${customer.customer_name || ''}`.trim());
+
+        setForm((prev) => ({
+            ...prev,
+            customer_id: customer.id,
+            customer_code: customer.customer_code,
+            customer_name: customer.customer_name,
+        }));
+    };
+
+    const clearCustomer = () => {
+        setSelectedCustomer(null);
+        setCustomerSearchTerm('');
+        setCustomerSearchResults([]);
+
+        setForm((prev) => ({
+            ...prev,
+            customer_id: null,
+            customer_code: '',
+            customer_name: '',
+        }));
+    };
+
     const handleSave = async () => {
-        if (!form.customer_code && !form.customer_name) {
-            setError('顧客コードまたは顧客名を入力してください。');
+        if (!form.customer_id) {
+            setError('顧客を検索して選択してください。');
+            return;
+        }
+
+        if (!form.billing_email && form.delivery_method === 'email') {
+            setError('送信方法がメールの場合は、請求先メールを入力してください。');
             return;
         }
 
@@ -595,9 +700,6 @@ const BillingSettingModal: React.FC<{
         }
     };
 
-    const inputClass =
-        'w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500';
-
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
@@ -621,26 +723,87 @@ const BillingSettingModal: React.FC<{
                         </div>
                     )}
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                                顧客コード
-                            </label>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                            顧客検索
+                        </label>
+
+                        <div className="flex gap-2">
                             <input
                                 className={inputClass}
-                                value={form.customer_code || ''}
-                                onChange={(e) => update('customer_code', e.target.value)}
+                                value={customerSearchTerm}
+                                onChange={(e) => setCustomerSearchTerm(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        searchCustomers();
+                                    }
+                                }}
+                                placeholder="顧客コードまたは顧客名で検索"
                             />
+                            <button
+                                type="button"
+                                onClick={searchCustomers}
+                                disabled={isSearchingCustomer}
+                                className="whitespace-nowrap flex items-center gap-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 disabled:bg-slate-300"
+                            >
+                                {isSearchingCustomer ? (
+                                    <Loader className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <Search className="w-4 h-4" />
+                                )}
+                                検索
+                            </button>
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                                顧客名
-                            </label>
-                            <input
-                                className={inputClass}
-                                value={form.customer_name || ''}
-                                onChange={(e) => update('customer_name', e.target.value)}
-                            />
+
+                        {customerSearchResults.length > 0 && (
+                            <div className="mt-2 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                                {customerSearchResults.map((customer) => (
+                                    <button
+                                        type="button"
+                                        key={customer.id}
+                                        onClick={() => selectCustomer(customer)}
+                                        className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 border-b last:border-b-0 border-slate-100 dark:border-slate-700"
+                                    >
+                                        <div className="font-semibold text-slate-900 dark:text-white">
+                                            {customer.customer_code || '—'}　{customer.customer_name || '—'}
+                                        </div>
+                                        <div className="text-xs text-slate-500">{customerAddress(customer)}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-900/50">
+                            <div className="flex justify-between items-start gap-3">
+                                <div>
+                                    <p className="text-xs font-medium text-slate-500 mb-1">選択中の顧客</p>
+                                    {form.customer_id ? (
+                                        <>
+                                            <p className="font-semibold text-slate-900 dark:text-white">
+                                                {form.customer_code || '—'}　{form.customer_name || '—'}
+                                            </p>
+                                            {selectedCustomer && (
+                                                <p className="text-xs text-slate-500 mt-1">
+                                                    {customerAddress(selectedCustomer)}
+                                                </p>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <p className="text-sm text-slate-500">未選択</p>
+                                    )}
+                                </div>
+
+                                {form.customer_id && (
+                                    <button
+                                        type="button"
+                                        onClick={clearCustomer}
+                                        className="text-xs text-red-600 hover:underline"
+                                    >
+                                        選択解除
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -668,6 +831,7 @@ const BillingSettingModal: React.FC<{
                                 className={inputClass}
                                 value={form.billing_email || ''}
                                 onChange={(e) => update('billing_email', e.target.value)}
+                                placeholder="billing@example.com"
                             />
                         </div>
                         <div>
@@ -712,7 +876,7 @@ const BillingSettingModal: React.FC<{
                             className={inputClass}
                             value={form.email_subject_template || ''}
                             onChange={(e) => update('email_subject_template', e.target.value)}
-                            placeholder="例：【請求書送付】{{invoice_month}}分 請求書のご送付"
+                            placeholder="例：【請求書送付】{{customer_name}} 御中 請求書のご送付"
                         />
                     </div>
 
@@ -831,9 +995,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
             const invoiceRows = ((invoicesData || []) as InvoiceLegacyRow[]);
 
-            console.log('[LegacyInvoiceBillingPage] invoices count', invoiceRows.length);
-            console.log('[LegacyInvoiceBillingPage] first invoice', invoiceRows[0]);
-
             setInvoices(invoiceRows);
 
             const projectUuids = Array.from(
@@ -871,8 +1032,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                     if (p.id) mergedProjectMap[p.id] = p;
                     if (p.project_id) mergedProjectMap[p.project_id] = p;
                 });
-
-                console.log('[LegacyInvoiceBillingPage] projects by id count', data?.length);
             }
 
             if (projectIds.length > 0) {
@@ -892,8 +1051,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                     if (p.id) mergedProjectMap[p.id] = p;
                     if (p.project_id) mergedProjectMap[p.project_id] = p;
                 });
-
-                console.log('[LegacyInvoiceBillingPage] projects by project_id count', data?.length);
             }
 
             setProjects(mergedProjectMap);
@@ -938,16 +1095,12 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
             setCustomers(custMap);
 
-            console.log('[LegacyInvoiceBillingPage] requested customer ids count', customerIds.length);
-            console.log('[LegacyInvoiceBillingPage] customers count', customersData.length);
-
             const { data: issueData, error: issueError } = await supabase
                 .from('invoice_issue_records')
                 .select('id, legacy_invoice_id, invoice_no, issue_status, issued_at, issue_count');
 
             if (issueError) {
                 logSupabaseError('invoice_issue_records', issueError);
-                console.warn('[LegacyInvoiceBillingPage] issue records skipped');
                 setIssues({});
             } else {
                 const issueMap: Record<string, IssueRecordRow> = {};
@@ -958,8 +1111,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 });
 
                 setIssues(issueMap);
-
-                console.log('[LegacyInvoiceBillingPage] issue records count', issueData?.length);
             }
 
             const { data: deliveryData, error: deliveryError } = await supabase
@@ -968,7 +1119,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
             if (deliveryError) {
                 logSupabaseError('invoice_delivery_records', deliveryError);
-                console.warn('[LegacyInvoiceBillingPage] delivery records skipped');
                 setDeliveries({});
             } else {
                 const deliveryMap: Record<string, DeliveryRecordRow> = {};
@@ -979,8 +1129,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 });
 
                 setDeliveries(deliveryMap);
-
-                console.log('[LegacyInvoiceBillingPage] delivery records count', deliveryData?.length);
             }
 
             const { data: paymentData, error: paymentError } = await supabase
@@ -991,7 +1139,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
             if (paymentError) {
                 logSupabaseError('invoice_payment_matches', paymentError);
-                console.warn('[LegacyInvoiceBillingPage] payment matches skipped');
                 setPayments({});
             } else {
                 const paymentMap: Record<string, PaymentMatchRow> = {};
@@ -1002,8 +1149,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 });
 
                 setPayments(paymentMap);
-
-                console.log('[LegacyInvoiceBillingPage] payment matches count', paymentData?.length);
             }
         } catch (e) {
             console.error('[LegacyInvoiceBillingPage] failed to load legacy invoices', e);
