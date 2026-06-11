@@ -17,7 +17,7 @@ import {
 } from '../Icons';
 
 // ---------------------------------------------------------------------------
-// Types (aligned with Supabase legacy + management tables)
+// Types
 // ---------------------------------------------------------------------------
 
 interface CustomerRow {
@@ -35,6 +35,8 @@ interface CustomerRow {
 interface InvoiceLegacyRow {
     row_uuid: string;
     invoice_id: string | null;
+    order_id?: string | null;
+    project_id?: string | null;
     customer_uuid: string | null;
     delivery_date: string | null;
     specification: string | null;
@@ -44,6 +46,7 @@ interface InvoiceLegacyRow {
     note: string | null;
     pattern_name: string | null;
     status: string | null;
+    create_date: string | null;
 }
 
 interface InvoiceDetailRow {
@@ -70,6 +73,7 @@ interface IssueRecordRow {
 interface DeliveryRecordRow {
     id: string;
     legacy_invoice_id: string | null;
+    invoice_no: string | null;
     delivery_method: string | null;
     delivery_status: string | null;
     to_email: string | null;
@@ -79,6 +83,7 @@ interface DeliveryRecordRow {
 interface PaymentMatchRow {
     id: string;
     legacy_invoice_id: string | null;
+    invoice_no: string | null;
     expected_amount: number | null;
     paid_amount: number | null;
     balance_amount: number | null;
@@ -97,12 +102,12 @@ interface BillingSettingRow {
     billing_bcc: string | null;
     email_subject_template: string | null;
     email_body_template: string | null;
+    attachment_name_template: string | null;
     requires_manual_review: boolean | null;
     notes: string | null;
     is_active: boolean | null;
 }
 
-// Combined row used for the list view
 interface CombinedInvoice {
     invoice: InvoiceLegacyRow;
     customer: CustomerRow | null;
@@ -118,8 +123,9 @@ type Tab = 'unissued' | 'issued' | 'pending_send' | 'sent' | 'paid' | 'settings'
 // ---------------------------------------------------------------------------
 
 const JPY = (n: number | string | null | undefined) => {
-    const num = typeof n === 'string' ? parseFloat(n) : n;
+    const num = typeof n === 'string' ? Number(String(n).replace(/,/g, '')) : n;
     if (num === null || num === undefined || Number.isNaN(num)) return '¥0';
+
     return new Intl.NumberFormat('ja-JP', {
         style: 'currency',
         currency: 'JPY',
@@ -129,58 +135,79 @@ const JPY = (n: number | string | null | undefined) => {
 
 const numOf = (v: string | number | null | undefined): number => {
     if (v === null || v === undefined) return 0;
-    const n = typeof v === 'string' ? parseFloat(v) : v;
+    const n = typeof v === 'string' ? Number(String(v).replace(/,/g, '')) : v;
     return Number.isNaN(n) ? 0 : n;
 };
 
 const formatDate = (v: string | null | undefined): string => {
     if (!v) return '—';
+
     const d = new Date(v);
-    if (Number.isNaN(d.getTime())) return v;
+    if (Number.isNaN(d.getTime())) {
+        return v;
+    }
+
     return d.toLocaleDateString('ja-JP');
 };
 
 const customerAddress = (c: CustomerRow | null): string => {
     if (!c) return '—';
-    const parts = [c.post_no ? `〒${c.post_no}` : '', c.address_1 || '', c.address_2 || ''].filter(Boolean);
+
+    const parts = [
+        c.post_no ? `〒${c.post_no}` : '',
+        c.address_1 || '',
+        c.address_2 || '',
+    ].filter(Boolean);
+
     return parts.length ? parts.join(' ') : '—';
 };
 
+const logSupabaseError = (label: string, err: any) => {
+    console.error(`[LegacyInvoiceBillingPage] ${label} Supabase error`, {
+        message: err?.message,
+        details: err?.details,
+        hint: err?.hint,
+        code: err?.code,
+    });
+};
+
 const STATUS_LABELS: Record<string, string> = {
-    // issue
     not_issued: '未発行',
+    draft: '下書き',
     issued: '発行済み',
-    // delivery
     pending: '送信待ち',
     sent: '送信済み',
     failed: '送信失敗',
-    // payment
     unpaid: '未入金',
     partial: '一部入金',
     paid: '入金確認',
 };
 
-const StatusBadge: React.FC<{ status: string | null | undefined; kind: 'issue' | 'delivery' | 'payment' }> = ({
-    status,
-    kind,
-}) => {
+const StatusBadge: React.FC<{
+    status: string | null | undefined;
+    kind: 'issue' | 'delivery' | 'payment';
+}> = ({ status, kind }) => {
     if (!status) {
         const fallback = kind === 'issue' ? '未発行' : kind === 'delivery' ? '未送信' : '未入金';
+
         return (
             <span className="px-2.5 py-0.5 text-xs font-medium rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
                 {fallback}
             </span>
         );
     }
+
     const label = STATUS_LABELS[status] || status;
+
     const tone =
         status === 'issued' || status === 'sent' || status === 'paid'
             ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
             : status === 'failed'
-              ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
-              : status === 'partial' || status === 'pending'
-                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300'
-                : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
+                ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+                : status === 'partial' || status === 'pending'
+                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300'
+                    : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
+
     return <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${tone}`}>{label}</span>;
 };
 
@@ -198,36 +225,41 @@ const InvoiceDetailModal: React.FC<{
 
     useEffect(() => {
         let cancelled = false;
+
         const load = async () => {
             setIsLoading(true);
+
             try {
                 const supabase = getSupabase();
+
                 const { data, error } = await supabase
                     .from('invoice_details_legacy')
                     .select(
                         'row_uuid, invoice_uuid, record_no, major_item, medium_item, detail, quantity, unit_price, tax_rate',
                     )
                     .eq('invoice_uuid', invoice.row_uuid);
+
                 if (error) {
-                    console.error('[v0] invoice_details_legacy Supabase error', {
-                        message: error.message,
-                        details: (error as any).details,
-                        hint: (error as any).hint,
-                        code: (error as any).code,
-                    });
+                    logSupabaseError('invoice_details_legacy', error);
                     throw error;
                 }
+
                 if (!cancelled) {
-                    const sorted = (data || []).slice().sort((a, b) => numOf(a.record_no) - numOf(b.record_no));
+                    const sorted = ((data || []) as InvoiceDetailRow[])
+                        .slice()
+                        .sort((a, b) => numOf(a.record_no) - numOf(b.record_no));
+
                     setDetails(sorted);
                 }
             } catch (e) {
-                console.error('[v0] failed to load invoice details', e);
+                console.error('[LegacyInvoiceBillingPage] failed to load invoice details', e);
             } finally {
                 if (!cancelled) setIsLoading(false);
             }
         };
+
         load();
+
         return () => {
             cancelled = true;
         };
@@ -235,7 +267,7 @@ const InvoiceDetailModal: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
                 <div className="flex justify-between items-center p-6 border-b border-slate-200 dark:border-slate-700">
                     <div>
                         <h2 className="text-2xl font-bold text-slate-900 dark:text-white">請求書詳細</h2>
@@ -249,6 +281,7 @@ const InvoiceDetailModal: React.FC<{
                         <X className="w-6 h-6" />
                     </button>
                 </div>
+
                 <div className="p-6 overflow-y-auto">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                         <div>
@@ -263,14 +296,24 @@ const InvoiceDetailModal: React.FC<{
                             <p className="font-semibold text-slate-900 dark:text-white">
                                 {formatDate(invoice.delivery_date)}
                             </p>
-                            <p className="text-sm text-slate-500 mt-1">締日: {customer?.closing_day || '—'} / 支払日: {customer?.pay_day || customer?.bill_payment_day || '—'}</p>
+                            <p className="text-sm text-slate-500 mt-1">
+                                締日: {customer?.closing_day || '—'} / 支払日:{' '}
+                                {customer?.pay_day || customer?.bill_payment_day || '—'}
+                            </p>
                         </div>
                     </div>
 
                     {invoice.specification && (
-                        <div className="mb-4 text-sm">
+                        <div className="mb-4 text-sm whitespace-pre-wrap">
                             <span className="font-medium text-slate-500">仕様: </span>
                             <span className="text-slate-700 dark:text-slate-300">{invoice.specification}</span>
+                        </div>
+                    )}
+
+                    {invoice.note && (
+                        <div className="mb-4 text-sm whitespace-pre-wrap">
+                            <span className="font-medium text-slate-500">備考: </span>
+                            <span className="text-slate-700 dark:text-slate-300">{invoice.note}</span>
                         </div>
                     )}
 
@@ -304,6 +347,7 @@ const InvoiceDetailModal: React.FC<{
                                 ) : (
                                     details.map((d) => {
                                         const amount = numOf(d.quantity) * numOf(d.unit_price);
+
                                         return (
                                             <tr
                                                 key={d.row_uuid}
@@ -313,7 +357,9 @@ const InvoiceDetailModal: React.FC<{
                                                 <td className="px-3 py-2">{d.major_item || '—'}</td>
                                                 <td className="px-3 py-2">{d.medium_item || '—'}</td>
                                                 <td className="px-3 py-2">{d.detail || '—'}</td>
-                                                <td className="px-3 py-2 text-right">{numOf(d.quantity).toLocaleString()}</td>
+                                                <td className="px-3 py-2 text-right">
+                                                    {numOf(d.quantity).toLocaleString()}
+                                                </td>
                                                 <td className="px-3 py-2 text-right">{JPY(d.unit_price)}</td>
                                                 <td className="px-3 py-2 text-right">{d.tax_rate ? `${d.tax_rate}%` : '—'}</td>
                                                 <td className="px-3 py-2 text-right font-medium">{JPY(amount)}</td>
@@ -342,6 +388,7 @@ const InvoiceDetailModal: React.FC<{
                         </div>
                     </div>
                 </div>
+
                 <div className="p-6 border-t border-slate-200 dark:border-slate-700 flex flex-wrap justify-end gap-3">
                     <div className="flex items-center gap-2 mr-auto">
                         <StatusBadge status={combined.issue?.issue_status} kind="issue" />
@@ -373,7 +420,8 @@ const emptySetting = (): Partial<BillingSettingRow> => ({
     billing_bcc: '',
     email_subject_template: '',
     email_body_template: '',
-    requires_manual_review: false,
+    attachment_name_template: '',
+    requires_manual_review: true,
     notes: '',
     is_active: true,
 });
@@ -387,42 +435,62 @@ const BillingSettingModal: React.FC<{
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const update = (key: keyof BillingSettingRow, value: string | boolean) =>
+    const update = (key: keyof BillingSettingRow, value: string | boolean) => {
         setForm((prev) => ({ ...prev, [key]: value }));
+    };
 
     const handleSave = async () => {
         if (!form.customer_code && !form.customer_name) {
             setError('顧客コードまたは顧客名を入力してください。');
             return;
         }
+
         setIsSaving(true);
         setError(null);
+
         try {
             const supabase = getSupabase();
+
             const payload = {
                 customer_id: form.customer_id ?? null,
                 customer_code: form.customer_code || null,
                 customer_name: form.customer_name || null,
-                delivery_method: form.delivery_method || null,
+                delivery_method: form.delivery_method || 'email',
                 billing_email: form.billing_email || null,
                 billing_cc: form.billing_cc || null,
                 billing_bcc: form.billing_bcc || null,
                 email_subject_template: form.email_subject_template || null,
                 email_body_template: form.email_body_template || null,
-                requires_manual_review: !!form.requires_manual_review,
+                attachment_name_template: form.attachment_name_template || null,
+                requires_manual_review: form.requires_manual_review ?? true,
                 notes: form.notes || null,
                 is_active: form.is_active ?? true,
             };
+
             if (form.id) {
-                const { error } = await supabase.from('customer_billing_settings').update(payload).eq('id', form.id);
-                if (error) throw error;
+                const { error } = await supabase
+                    .from('customer_billing_settings')
+                    .update(payload)
+                    .eq('id', form.id);
+
+                if (error) {
+                    logSupabaseError('customer_billing_settings update', error);
+                    throw error;
+                }
             } else {
-                const { error } = await supabase.from('customer_billing_settings').insert(payload);
-                if (error) throw error;
+                const { error } = await supabase
+                    .from('customer_billing_settings')
+                    .insert(payload);
+
+                if (error) {
+                    logSupabaseError('customer_billing_settings insert', error);
+                    throw error;
+                }
             }
+
             onSaved();
         } catch (e) {
-            console.error('[v0] failed to save billing setting', e);
+            console.error('[LegacyInvoiceBillingPage] failed to save billing setting', e);
             setError(e instanceof Error ? e.message : '保存に失敗しました。');
         } finally {
             setIsSaving(false);
@@ -447,12 +515,14 @@ const BillingSettingModal: React.FC<{
                         <X className="w-6 h-6" />
                     </button>
                 </div>
+
                 <div className="p-6 overflow-y-auto space-y-4">
                     {error && (
                         <div className="rounded-lg bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-4 py-2 text-sm">
                             {error}
                         </div>
                     )}
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
@@ -475,6 +545,7 @@ const BillingSettingModal: React.FC<{
                             />
                         </div>
                     </div>
+
                     <div>
                         <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
                             送信方法
@@ -489,6 +560,7 @@ const BillingSettingModal: React.FC<{
                             <option value="manual">手動</option>
                         </select>
                     </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
@@ -521,6 +593,19 @@ const BillingSettingModal: React.FC<{
                             />
                         </div>
                     </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                            添付ファイル名テンプレート
+                        </label>
+                        <input
+                            className={inputClass}
+                            value={form.attachment_name_template || ''}
+                            onChange={(e) => update('attachment_name_template', e.target.value)}
+                            placeholder="例：請求書_{{invoice_id}}_{{customer_name}}.pdf"
+                        />
+                    </div>
+
                     <div>
                         <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
                             メール件名テンプレート
@@ -529,8 +614,10 @@ const BillingSettingModal: React.FC<{
                             className={inputClass}
                             value={form.email_subject_template || ''}
                             onChange={(e) => update('email_subject_template', e.target.value)}
+                            placeholder="例：【請求書送付】{{invoice_month}}分 請求書のご送付"
                         />
                     </div>
+
                     <div>
                         <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
                             メール本文テンプレート
@@ -541,6 +628,7 @@ const BillingSettingModal: React.FC<{
                             onChange={(e) => update('email_body_template', e.target.value)}
                         />
                     </div>
+
                     <div>
                         <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
                             備考
@@ -551,6 +639,7 @@ const BillingSettingModal: React.FC<{
                             onChange={(e) => update('notes', e.target.value)}
                         />
                     </div>
+
                     <div className="flex items-center gap-6">
                         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                             <input
@@ -570,6 +659,7 @@ const BillingSettingModal: React.FC<{
                         </label>
                     </div>
                 </div>
+
                 <div className="p-6 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
                     <button
                         onClick={onClose}
@@ -618,78 +708,104 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
     const [settings, setSettings] = useState<BillingSettingRow[]>([]);
     const [editingSetting, setEditingSetting] = useState<Partial<BillingSettingRow> | null>(null);
-
     const [selected, setSelected] = useState<CombinedInvoice | null>(null);
 
     const loadInvoiceData = useCallback(async () => {
         setIsLoading(true);
         setError(null);
+
         try {
             const supabase = getSupabase();
-            const [invRes, custRes, issueRes, delRes, payRes] = await Promise.all([
-                supabase
-                    .from('invoices_legacy')
-                    .select(
-                        'row_uuid, invoice_id, customer_uuid, delivery_date, specification, subtotal, consumption, total, note, pattern_name, status',
-                    )
-                    .order('delivery_date', { ascending: false })
-                    .limit(500),
-                supabase
-                    .from('customers')
-                    .select('id, customer_code, customer_name, post_no, address_1, address_2, closing_day, pay_day, bill_payment_day'),
-                supabase
-                    .from('invoice_issue_records')
-                    .select('id, legacy_invoice_id, invoice_no, issue_status, issued_at, issue_count'),
-                supabase
-                    .from('invoice_delivery_records')
-                    .select('id, legacy_invoice_id, delivery_method, delivery_status, to_email, sent_at'),
-                supabase
-                    .from('invoice_payment_matches')
-                    .select('id, legacy_invoice_id, expected_amount, paid_amount, balance_amount, payment_status, payment_date'),
-            ]);
 
-            const logSupabaseError = (label: string, err: any) => {
-                console.error(`[v0] ${label} Supabase error`, {
-                    message: err?.message,
-                    details: err?.details,
-                    hint: err?.hint,
-                    code: err?.code,
-                });
-            };
+            const { data: invoicesData, error: invoicesError } = await supabase
+                .from('invoices_legacy')
+                .select(
+                    'row_uuid, invoice_id, order_id, project_id, customer_uuid, delivery_date, specification, subtotal, consumption, total, note, pattern_name, status, create_date',
+                )
+                .order('create_date', { ascending: false })
+                .limit(500);
 
-            if (invRes.error) { logSupabaseError('invoices_legacy', invRes.error); throw invRes.error; }
-            if (custRes.error) { logSupabaseError('customers', custRes.error); throw custRes.error; }
-            if (issueRes.error) { logSupabaseError('invoice_issue_records', issueRes.error); throw issueRes.error; }
-            if (delRes.error) { logSupabaseError('invoice_delivery_records', delRes.error); throw delRes.error; }
-            if (payRes.error) { logSupabaseError('invoice_payment_matches', payRes.error); throw payRes.error; }
+            if (invoicesError) {
+                logSupabaseError('invoices_legacy', invoicesError);
+                throw invoicesError;
+            }
 
-            setInvoices((invRes.data as InvoiceLegacyRow[]) || []);
+            console.log('[LegacyInvoiceBillingPage] invoices count', invoicesData?.length);
+            console.log('[LegacyInvoiceBillingPage] first invoice', invoicesData?.[0]);
+
+            setInvoices((invoicesData as InvoiceLegacyRow[]) || []);
+
+            const { data: customersData, error: customersError } = await supabase
+                .from('customers')
+                .select(
+                    'id, customer_code, customer_name, post_no, address_1, address_2, closing_day, pay_day, bill_payment_day',
+                );
+
+            if (customersError) {
+                logSupabaseError('customers', customersError);
+                throw customersError;
+            }
+
+            console.log('[LegacyInvoiceBillingPage] customers count', customersData?.length);
 
             const custMap: Record<string, CustomerRow> = {};
-            ((custRes.data as CustomerRow[]) || []).forEach((c) => {
+            ((customersData as CustomerRow[]) || []).forEach((c) => {
                 custMap[c.id] = c;
             });
             setCustomers(custMap);
 
-            const issueMap: Record<string, IssueRecordRow> = {};
-            ((issueRes.data as IssueRecordRow[]) || []).forEach((r) => {
-                if (r.legacy_invoice_id) issueMap[r.legacy_invoice_id] = r;
-            });
-            setIssues(issueMap);
+            const { data: issueData, error: issueError } = await supabase
+                .from('invoice_issue_records')
+                .select('id, legacy_invoice_id, invoice_no, issue_status, issued_at, issue_count');
 
-            const delMap: Record<string, DeliveryRecordRow> = {};
-            ((delRes.data as DeliveryRecordRow[]) || []).forEach((r) => {
-                if (r.legacy_invoice_id) delMap[r.legacy_invoice_id] = r;
-            });
-            setDeliveries(delMap);
+            if (issueError) {
+                logSupabaseError('invoice_issue_records', issueError);
+                console.warn('[LegacyInvoiceBillingPage] issue records skipped');
+                setIssues({});
+            } else {
+                const issueMap: Record<string, IssueRecordRow> = {};
+                ((issueData as IssueRecordRow[]) || []).forEach((r) => {
+                    if (r.legacy_invoice_id) issueMap[r.legacy_invoice_id] = r;
+                });
+                setIssues(issueMap);
+                console.log('[LegacyInvoiceBillingPage] issue records count', issueData?.length);
+            }
 
-            const payMap: Record<string, PaymentMatchRow> = {};
-            ((payRes.data as PaymentMatchRow[]) || []).forEach((r) => {
-                if (r.legacy_invoice_id) payMap[r.legacy_invoice_id] = r;
-            });
-            setPayments(payMap);
+            const { data: deliveryData, error: deliveryError } = await supabase
+                .from('invoice_delivery_records')
+                .select('id, legacy_invoice_id, invoice_no, delivery_method, delivery_status, to_email, sent_at');
+
+            if (deliveryError) {
+                logSupabaseError('invoice_delivery_records', deliveryError);
+                console.warn('[LegacyInvoiceBillingPage] delivery records skipped');
+                setDeliveries({});
+            } else {
+                const deliveryMap: Record<string, DeliveryRecordRow> = {};
+                ((deliveryData as DeliveryRecordRow[]) || []).forEach((r) => {
+                    if (r.legacy_invoice_id) deliveryMap[r.legacy_invoice_id] = r;
+                });
+                setDeliveries(deliveryMap);
+                console.log('[LegacyInvoiceBillingPage] delivery records count', deliveryData?.length);
+            }
+
+            const { data: paymentData, error: paymentError } = await supabase
+                .from('invoice_payment_matches')
+                .select('id, legacy_invoice_id, invoice_no, expected_amount, paid_amount, balance_amount, payment_status, payment_date');
+
+            if (paymentError) {
+                logSupabaseError('invoice_payment_matches', paymentError);
+                console.warn('[LegacyInvoiceBillingPage] payment matches skipped');
+                setPayments({});
+            } else {
+                const paymentMap: Record<string, PaymentMatchRow> = {};
+                ((paymentData as PaymentMatchRow[]) || []).forEach((r) => {
+                    if (r.legacy_invoice_id) paymentMap[r.legacy_invoice_id] = r;
+                });
+                setPayments(paymentMap);
+                console.log('[LegacyInvoiceBillingPage] payment matches count', paymentData?.length);
+            }
         } catch (e) {
-            console.error('[v0] failed to load legacy invoices', e);
+            console.error('[LegacyInvoiceBillingPage] failed to load legacy invoices', e);
             setError(e instanceof Error ? e.message : '請求データの取得に失敗しました。');
         } finally {
             setIsLoading(false);
@@ -699,18 +815,25 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     const loadSettings = useCallback(async () => {
         setIsLoading(true);
         setError(null);
+
         try {
             const supabase = getSupabase();
+
             const { data, error } = await supabase
                 .from('customer_billing_settings')
                 .select(
-                    'id, customer_id, customer_code, customer_name, delivery_method, billing_email, billing_cc, billing_bcc, email_subject_template, email_body_template, requires_manual_review, notes, is_active',
+                    'id, customer_id, customer_code, customer_name, delivery_method, billing_email, billing_cc, billing_bcc, email_subject_template, email_body_template, attachment_name_template, requires_manual_review, notes, is_active',
                 )
                 .order('customer_code', { ascending: true });
-            if (error) throw error;
+
+            if (error) {
+                logSupabaseError('customer_billing_settings', error);
+                throw error;
+            }
+
             setSettings((data as BillingSettingRow[]) || []);
         } catch (e) {
-            console.error('[v0] failed to load billing settings', e);
+            console.error('[LegacyInvoiceBillingPage] failed to load billing settings', e);
             setError(e instanceof Error ? e.message : '顧客別設定の取得に失敗しました。');
         } finally {
             setIsLoading(false);
@@ -728,6 +851,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     const combinedInvoices = useMemo<CombinedInvoice[]>(() => {
         return invoices.map((invoice) => {
             const key = invoice.row_uuid || '';
+
             return {
                 invoice,
                 customer: invoice.customer_uuid ? customers[invoice.customer_uuid] || null : null,
@@ -741,29 +865,45 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     const filteredInvoices = useMemo(() => {
         let rows = combinedInvoices;
 
-        // Tab filtering
         if (activeTab === 'unissued') {
-            rows = rows.filter((r) => !r.issue || r.issue.issue_status !== 'issued');
+            rows = rows.filter((r) => {
+                return (
+                    !r.issue ||
+                    !r.issue.issue_status ||
+                    r.issue.issue_status === 'not_issued' ||
+                    r.issue.issue_status === 'draft'
+                );
+            });
         } else if (activeTab === 'issued') {
             rows = rows.filter((r) => r.issue?.issue_status === 'issued');
         } else if (activeTab === 'pending_send') {
-            rows = rows.filter(
-                (r) => r.issue?.issue_status === 'issued' && (!r.delivery || r.delivery.delivery_status === 'pending'),
-            );
+            rows = rows.filter((r) => {
+                return (
+                    r.issue?.issue_status === 'issued' &&
+                    (!r.delivery ||
+                        !r.delivery.delivery_status ||
+                        r.delivery.delivery_status === 'pending' ||
+                        r.delivery.delivery_status === 'draft')
+                );
+            });
         } else if (activeTab === 'sent') {
             rows = rows.filter((r) => r.delivery?.delivery_status === 'sent');
         } else if (activeTab === 'paid') {
-            rows = rows.filter((r) => r.payment?.payment_status === 'paid' || r.payment?.payment_status === 'partial');
+            rows = rows.filter(
+                (r) => r.payment?.payment_status === 'paid' || r.payment?.payment_status === 'partial',
+            );
         }
 
-        // Search
         if (searchTerm.trim()) {
             const q = searchTerm.trim().toLowerCase();
+
             rows = rows.filter((r) => {
                 return (
                     (r.invoice.invoice_id || '').toLowerCase().includes(q) ||
                     (r.customer?.customer_code || '').toLowerCase().includes(q) ||
-                    (r.customer?.customer_name || '').toLowerCase().includes(q)
+                    (r.customer?.customer_name || '').toLowerCase().includes(q) ||
+                    (r.invoice.specification || '').toLowerCase().includes(q) ||
+                    (r.invoice.note || '').toLowerCase().includes(q)
                 );
             });
         }
@@ -773,22 +913,27 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
     const filteredSettings = useMemo(() => {
         if (!searchTerm.trim()) return settings;
+
         const q = searchTerm.trim().toLowerCase();
+
         return settings.filter(
             (s) =>
                 (s.customer_code || '').toLowerCase().includes(q) ||
-                (s.customer_name || '').toLowerCase().includes(q),
+                (s.customer_name || '').toLowerCase().includes(q) ||
+                (s.billing_email || '').toLowerCase().includes(q),
         );
     }, [settings, searchTerm]);
 
     const handleRefresh = () => {
-        if (activeTab === 'settings') loadSettings();
-        else loadInvoiceData();
+        if (activeTab === 'settings') {
+            loadSettings();
+        } else {
+            loadInvoiceData();
+        }
     };
 
     return (
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm">
-            {/* Header */}
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
@@ -796,9 +941,11 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                             <FileText className="w-6 h-6" />
                         </div>
                         <div>
-                            <h1 className="text-xl font-bold text-slate-900 dark:text-white">請求書発行・送信管理（基幹連携）</h1>
+                            <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+                                請求書発行・送信管理（基幹連携）
+                            </h1>
                             <p className="text-sm text-slate-500">
-                                基幹SQL Serverから同期された請求データ（invoices_legacy）を元にした BtoB 請求管理
+                                基幹SQL Serverから同期された請求データを元にした BtoB 請求管理
                             </p>
                         </div>
                     </div>
@@ -812,16 +959,19 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* Tabs */}
             <div className="px-6 border-b border-slate-200 dark:border-slate-700">
                 <nav className="-mb-px flex flex-wrap gap-x-6">
                     {TABS.map((tab) => {
                         const Icon = tab.icon;
                         const isActive = activeTab === tab.id;
+
                         return (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
+                                onClick={() => {
+                                    setSearchTerm('');
+                                    setActiveTab(tab.id);
+                                }}
                                 className={`whitespace-nowrap py-4 px-1 border-b-2 font-semibold text-sm transition-colors flex items-center gap-2 ${
                                     isActive
                                         ? 'border-blue-500 text-blue-600 dark:text-blue-400'
@@ -836,17 +986,24 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 </nav>
             </div>
 
-            {/* Toolbar */}
             <div className="p-4 flex flex-wrap items-center justify-between gap-3 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
                 <div className="relative flex-1 min-w-[220px] max-w-sm">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder={activeTab === 'settings' ? '顧客コード / 顧客名で検索...' : '請求番号 / 顧客で検索...'}
+                        placeholder={activeTab === 'settings' ? '顧客コード / 顧客名 / メールで検索...' : '請求番号 / 顧客 / 仕様で検索...'}
                         className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 pl-9 pr-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                 </div>
+
+                {activeTab !== 'settings' && (
+                    <div className="text-sm text-slate-500">
+                        表示件数: <span className="font-semibold text-slate-700 dark:text-slate-200">{filteredInvoices.length}</span> / 取得件数:{' '}
+                        <span className="font-semibold text-slate-700 dark:text-slate-200">{invoices.length}</span>
+                    </div>
+                )}
+
                 {activeTab === 'settings' && (
                     <button
                         onClick={() => setEditingSetting(emptySetting())}
@@ -858,14 +1015,12 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 )}
             </div>
 
-            {/* Error */}
             {error && (
                 <div className="m-4 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-4 py-3 text-sm">
                     {error}
                 </div>
             )}
 
-            {/* Content */}
             {activeTab === 'settings' ? (
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
@@ -903,15 +1058,13 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                                             {s.delivery_method === 'email'
                                                 ? 'メール'
                                                 : s.delivery_method === 'post'
-                                                  ? '郵送'
-                                                  : s.delivery_method === 'manual'
-                                                    ? '手動'
-                                                    : s.delivery_method || '—'}
+                                                    ? '郵送'
+                                                    : s.delivery_method === 'manual'
+                                                        ? '手動'
+                                                        : s.delivery_method || '—'}
                                         </td>
                                         <td className="px-6 py-4">{s.billing_email || '—'}</td>
-                                        <td className="px-6 py-4 text-center">
-                                            {s.requires_manual_review ? '要' : '—'}
-                                        </td>
+                                        <td className="px-6 py-4 text-center">{s.requires_manual_review ? '要' : '—'}</td>
                                         <td className="px-6 py-4 text-center">
                                             <span
                                                 className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${
@@ -937,6 +1090,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                             )}
                         </tbody>
                     </table>
+
                     {!isLoading && filteredSettings.length === 0 && (
                         <div className="p-16 text-center text-slate-500">
                             <Building className="w-10 h-10 mx-auto mb-3 text-slate-300" />
@@ -984,8 +1138,11 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                                             {row.customer?.customer_name || '—'}
                                         </td>
                                         <td className="px-4 py-3">{formatDate(row.invoice.delivery_date)}</td>
-                                        <td className="px-4 py-3 max-w-[180px] truncate" title={row.invoice.specification || ''}>
-                                            {row.invoice.specification || '—'}
+                                        <td
+                                            className="px-4 py-3 max-w-[220px] truncate"
+                                            title={row.invoice.specification || row.invoice.note || ''}
+                                        >
+                                            {row.invoice.specification || row.invoice.note || '—'}
                                         </td>
                                         <td className="px-4 py-3 text-right">{JPY(row.invoice.subtotal)}</td>
                                         <td className="px-4 py-3 text-right">{JPY(row.invoice.consumption)}</td>
@@ -1006,6 +1163,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                             )}
                         </tbody>
                     </table>
+
                     {!isLoading && filteredInvoices.length === 0 && (
                         <div className="p-16 text-center text-slate-500">
                             <FileText className="w-10 h-10 mx-auto mb-3 text-slate-300" />
@@ -1016,6 +1174,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             )}
 
             {selected && <InvoiceDetailModal combined={selected} onClose={() => setSelected(null)} />}
+
             {editingSetting && (
                 <BillingSettingModal
                     setting={editingSetting}
