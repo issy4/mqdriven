@@ -84,7 +84,8 @@ interface InvoiceDetailRow {
 
 interface MasterLegacyRow {
     legacy_id: string | null;
-    name: string | null;
+    key_name: string | null;
+    value: string | null;
 }
 
 interface IssueRecordRow {
@@ -408,19 +409,23 @@ const InvoiceDetailModal: React.FC<{
                 if (masterLegacyIds.length > 0) {
                     const { data: masterData, error: masterError } = await supabase
                         .from('master_legacy')
-                        .select('legacy_id, name')
+                        .select('legacy_id, key_name, value')
                         .in('legacy_id', masterLegacyIds);
 
                     if (masterError) {
                         logSupabaseError('master_legacy', masterError);
                     } else if (!cancelled) {
                         const nextMasterMap: Record<string, string> = {};
-                        ((masterData || []) as MasterLegacyRow[]).forEach((m) => {
-                            if (m.legacy_id) {
-                                nextMasterMap[String(m.legacy_id)] = m.name || String(m.legacy_id);
-                            }
-                        });
-                        setMasterMap(nextMasterMap);
+
+((masterData || []) as MasterLegacyRow[]).forEach((m) => {
+    const key = m.legacy_id ? String(m.legacy_id).trim() : '';
+
+    if (key) {
+        nextMasterMap[key] = m.value || key;
+    }
+});
+
+setMasterMap(nextMasterMap);
                     }
                 } else if (!cancelled) {
                     setMasterMap({});
