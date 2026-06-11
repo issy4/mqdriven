@@ -111,11 +111,17 @@ interface PaymentMatchRow {
     id: string;
     legacy_invoice_id: string | null;
     invoice_no: string | null;
+    customer_code: string | null;
+    customer_name: string | null;
     expected_amount: number | string | null;
     paid_amount: number | string | null;
     balance_amount: number | string | null;
     payment_status: string | null;
     payment_date: string | null;
+    matched_at?: string | null;
+    payment_source?: string | null;
+    payment_reference?: string | null;
+    note?: string | null;
 }
 
 interface BillingSettingRow {
@@ -207,6 +213,15 @@ const formatDateTime = (v: string | null | undefined): string => {
     }
 
     return d.toLocaleString('ja-JP');
+};
+
+const todayDateString = (): string => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+
+    return `${yyyy}-${mm}-${dd}`;
 };
 
 const customerAddress = (c: CustomerRow | CustomerSearchResult | null): string => {
@@ -329,7 +344,7 @@ const STATUS_LABELS: Record<string, string> = {
     failed: '送付失敗',
     unpaid: '未入金',
     partial: '一部入金',
-    paid: '入金確認',
+    paid: '入金確認済み',
 };
 
 const StatusBadge: React.FC<{
@@ -371,17 +386,28 @@ const InvoiceDetailModal: React.FC<{
     onMarkAsIssued: (combined: CombinedInvoice) => Promise<void>;
     onMarkAsPendingDelivery: (combined: CombinedInvoice) => Promise<void>;
     onMarkAsDeliverySent: (combined: CombinedInvoice) => Promise<void>;
-}> = ({ combined, onClose, onMarkAsIssued, onMarkAsPendingDelivery, onMarkAsDeliverySent }) => {
-    const { invoice, project, customer, delivery } = combined;
+    onMarkAsPaid: (combined: CombinedInvoice) => Promise<void>;
+}> = ({
+    combined,
+    onClose,
+    onMarkAsIssued,
+    onMarkAsPendingDelivery,
+    onMarkAsDeliverySent,
+    onMarkAsPaid,
+}) => {
+    const { invoice, project, customer, delivery, payment } = combined;
     const [details, setDetails] = useState<InvoiceDetailRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isMarkingIssued, setIsMarkingIssued] = useState(false);
     const [isMarkingPendingDelivery, setIsMarkingPendingDelivery] = useState(false);
     const [isMarkingDeliverySent, setIsMarkingDeliverySent] = useState(false);
+    const [isMarkingPaid, setIsMarkingPaid] = useState(false);
 
     const isIssued = combined.issue?.issue_status === 'issued';
     const hasDelivery = !!combined.delivery;
     const isPendingDelivery = delivery?.delivery_status === 'pending';
+    const isDeliverySent = delivery?.delivery_status === 'sent';
+    const isPaid = payment?.payment_status === 'paid';
 
     useEffect(() => {
         let cancelled = false;
@@ -472,6 +498,22 @@ const InvoiceDetailModal: React.FC<{
             await onMarkAsDeliverySent(combined);
         } finally {
             setIsMarkingDeliverySent(false);
+        }
+    };
+
+    const handleMarkAsPaid = async () => {
+        const ok = window.confirm(
+            `請求番号 ${invoice.invoice_id || '—'} を「入金確認済み」として登録します。\n\n請求合計額 ${JPY(invoice.total)} を入金済みとして登録します。よろしいですか？`,
+        );
+
+        if (!ok) return;
+
+        setIsMarkingPaid(true);
+
+        try {
+            await onMarkAsPaid(combined);
+        } finally {
+            setIsMarkingPaid(false);
         }
     };
 
@@ -598,6 +640,53 @@ const InvoiceDetailModal: React.FC<{
                                         {delivery.attachment_file_name || '—'}
                                     </p>
                                 </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {payment && (
+                        <div className="mb-6 rounded-xl border border-green-100 dark:border-green-900/50 bg-green-50/60 dark:bg-green-950/20 p-4">
+                            <div className="flex items-center justify-between gap-3 mb-3">
+                                <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <Mail className="w-4 h-4 text-green-600" />
+                                    入金情報
+                                </h3>
+                                <StatusBadge status={payment.payment_status} kind="payment" />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                <div>
+                                    <p className="text-xs font-medium text-slate-500">請求額</p>
+                                    <p className="text-slate-900 dark:text-white">{JPY(payment.expected_amount)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-medium text-slate-500">入金額</p>
+                                    <p className="text-slate-900 dark:text-white">{JPY(payment.paid_amount)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-medium text-slate-500">差額</p>
+                                    <p className="text-slate-900 dark:text-white">{JPY(payment.balance_amount)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-medium text-slate-500">入金日</p>
+                                    <p className="text-slate-900 dark:text-white">{formatDate(payment.payment_date)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-medium text-slate-500">確認日時</p>
+                                    <p className="text-slate-900 dark:text-white">{formatDateTime(payment.matched_at)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-medium text-slate-500">確認方法</p>
+                                    <p className="text-slate-900 dark:text-white">
+                                        {payment.payment_source === 'manual' ? '手動登録' : payment.payment_source || '—'}
+                                    </p>
+                                </div>
+                                {payment.note && (
+                                    <div className="sm:col-span-2">
+                                        <p className="text-xs font-medium text-slate-500">備考</p>
+                                        <p className="text-slate-900 dark:text-white">{payment.note}</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -729,6 +818,21 @@ const InvoiceDetailModal: React.FC<{
                                 <CheckCircle className="w-5 h-5" />
                             )}
                             {deliveryDoneButtonLabel(delivery?.delivery_method)}
+                        </button>
+                    )}
+
+                    {isIssued && isDeliverySent && !isPaid && (
+                        <button
+                            onClick={handleMarkAsPaid}
+                            disabled={isMarkingPaid}
+                            className="flex items-center gap-2 bg-emerald-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-emerald-700 disabled:bg-slate-400"
+                        >
+                            {isMarkingPaid ? (
+                                <Loader className="w-5 h-5 animate-spin" />
+                            ) : (
+                                <CheckCircle className="w-5 h-5" />
+                            )}
+                            入金確認済みにする
                         </button>
                     )}
 
@@ -1369,7 +1473,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             const { data: paymentData, error: paymentError } = await supabase
                 .from('invoice_payment_matches')
                 .select(
-                    'id, legacy_invoice_id, invoice_no, expected_amount, paid_amount, balance_amount, payment_status, payment_date',
+                    'id, legacy_invoice_id, invoice_no, customer_code, customer_name, expected_amount, paid_amount, balance_amount, payment_status, payment_date, matched_at, payment_source, payment_reference, note',
                 );
 
             if (paymentError) {
@@ -1736,6 +1840,66 @@ const LegacyInvoiceBillingPage: React.FC = () => {
         [loadInvoiceData],
     );
 
+    const handleMarkAsPaid = useCallback(
+        async (combined: CombinedInvoice) => {
+            const supabase = getSupabase();
+
+            try {
+                if (combined.delivery?.delivery_status !== 'sent') {
+                    throw new Error('先に送付済みにしてください。');
+                }
+
+                const now = new Date().toISOString();
+                const paymentDate = todayDateString();
+                const total = numOf(combined.invoice.total);
+
+                const payload = {
+                    legacy_invoice_id: combined.invoice.row_uuid,
+                    invoice_no: combined.invoice.invoice_id,
+                    customer_code: combined.customer?.customer_code || combined.project?.customer_code || null,
+                    customer_name: combined.customer?.customer_name || null,
+                    expected_amount: total,
+                    paid_amount: total,
+                    balance_amount: 0,
+                    payment_status: 'paid',
+                    payment_date: paymentDate,
+                    matched_at: now,
+                    payment_source: 'manual',
+                    payment_reference: null,
+                    note: '手動で入金確認済みに登録',
+                };
+
+                if (combined.payment?.id) {
+                    const { error } = await supabase
+                        .from('invoice_payment_matches')
+                        .update(payload)
+                        .eq('id', combined.payment.id);
+
+                    if (error) {
+                        logSupabaseError('invoice_payment_matches update paid', error);
+                        throw error;
+                    }
+                } else {
+                    const { error } = await supabase.from('invoice_payment_matches').insert(payload);
+
+                    if (error) {
+                        logSupabaseError('invoice_payment_matches insert paid', error);
+                        throw error;
+                    }
+                }
+
+                setSelected(null);
+                await loadInvoiceData();
+                setActiveTab('paid');
+            } catch (e) {
+                console.error('[LegacyInvoiceBillingPage] failed to mark invoice as paid', e);
+                setError(e instanceof Error ? e.message : '入金確認済み登録に失敗しました。');
+                throw e;
+            }
+        },
+        [loadInvoiceData],
+    );
+
     const handleRefresh = () => {
         if (activeTab === 'settings') {
             loadSettings();
@@ -1998,6 +2162,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                     onMarkAsIssued={handleMarkAsIssued}
                     onMarkAsPendingDelivery={handleMarkAsPendingDelivery}
                     onMarkAsDeliverySent={handleMarkAsDeliverySent}
+                    onMarkAsPaid={handleMarkAsPaid}
                 />
             )}
 
