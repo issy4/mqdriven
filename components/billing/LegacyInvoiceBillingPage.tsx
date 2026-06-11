@@ -84,7 +84,8 @@ interface InvoiceDetailRow {
 
 interface MasterLegacyRow {
     legacy_id: string | null;
-    name: string | null;
+    key_name: string | null;
+    value: string | null;
 }
 
 interface IssueRecordRow {
@@ -210,6 +211,29 @@ const todayDateString = (): string => {
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
+};
+
+
+const formatJapaneseDateForInvoice = (v: string | null | undefined): string => {
+    const d = v ? new Date(v) : new Date();
+    if (Number.isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}年 ${d.getMonth() + 1}月 ${d.getDate()}日`;
+};
+
+const formatJapaneseMonthDay = (v: string | null | undefined): string => {
+    const d = v ? new Date(v) : new Date();
+    if (Number.isNaN(d.getTime())) return '';
+    return `${d.getMonth() + 1}月${d.getDate()}日`;
+};
+
+const sanitizeFileName = (value: string): string => {
+    return value.replace(/[\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
+};
+
+const taxAmountOf = (amount: number, taxRate: string | number | null | undefined): number => {
+    const rate = numOf(taxRate);
+    if (!rate) return 0;
+    return Math.round(amount * (rate / 100));
 };
 
 const customerAddress = (c: CustomerRow | CustomerSearchResult | null): string => {
@@ -362,6 +386,7 @@ const InvoiceDetailModal: React.FC<{
     const [isMarkingPendingDelivery, setIsMarkingPendingDelivery] = useState(false);
     const [isMarkingDeliverySent, setIsMarkingDeliverySent] = useState(false);
     const [isMarkingPaid, setIsMarkingPaid] = useState(false);
+    const [isGeneratingExcel, setIsGeneratingExcel] = useState(false);
 
     const isIssued = combined.issue?.issue_status === 'issued';
     const hasDelivery = !!combined.delivery;
@@ -401,14 +426,15 @@ const InvoiceDetailModal: React.FC<{
                     new Set(
                         sorted
                             .flatMap((d) => [d.major_item, d.medium_item])
-                            .filter((v): v is string => !!v),
+                            .filter((v): v is string => !!v)
+                            .map((v) => String(v).trim()),
                     ),
                 );
 
                 if (masterLegacyIds.length > 0) {
                     const { data: masterData, error: masterError } = await supabase
                         .from('master_legacy')
-                        .select('legacy_id, name')
+                        .select('legacy_id, key_name, value')
                         .in('legacy_id', masterLegacyIds);
 
                     if (masterError) {
@@ -416,8 +442,9 @@ const InvoiceDetailModal: React.FC<{
                     } else if (!cancelled) {
                         const nextMasterMap: Record<string, string> = {};
                         ((masterData || []) as MasterLegacyRow[]).forEach((m) => {
-                            if (m.legacy_id) {
-                                nextMasterMap[String(m.legacy_id)] = m.name || String(m.legacy_id);
+                            const key = m.legacy_id ? String(m.legacy_id).trim() : '';
+                            if (key) {
+                                nextMasterMap[key] = m.value || key;
                             }
                         });
                         setMasterMap(nextMasterMap);
@@ -441,7 +468,8 @@ const InvoiceDetailModal: React.FC<{
 
     const masterName = (legacyId: string | null | undefined): string => {
         if (!legacyId) return '—';
-        return masterMap[String(legacyId)] || String(legacyId);
+        const key = String(legacyId).trim();
+        return masterMap[key] || key;
     };
 
     const handleMarkAsIssued = async () => {
@@ -494,6 +522,117 @@ const InvoiceDetailModal: React.FC<{
             await onMarkAsPaid(combined);
         } finally {
             setIsMarkingPaid(false);
+        }
+    };
+
+
+    const handleGenerateInvoiceExcel = async () => {
+        if (details.length === 0) {
+            window.alert('請求明細がないため、Excelを生成できません。');
+            return;
+        }
+
+        setIsGeneratingExcel(true);
+
+        try {
+            const ExcelJS = await import('exceljs');
+            const { saveAs } = await import('file-saver');
+
+            const response = await fetch('/templates/invoice_format.xlsx');
+            if (!response.ok) {
+                throw new Error('請求書テンプレート /templates/invoice_format.xlsx を読み込めませんでした。');
+            }
+
+            const templateBuffer = await response.arrayBuffer();
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(templateBuffer);
+
+            const worksheet = workbook.getWorksheet('フォーマット') || workbook.worksheets[0];
+            if (!worksheet) {
+                throw new Error('請求書テンプレートに有効なシートがありません。');
+            }
+
+            const setCell = (address: string, value: string | number | null) => {
+                worksheet.getCell(address).value = value;
+            };
+
+            const customerName = customer?.customer_name || '';
+            const customerCode = customer?.customer_code || project?.customer_code || '';
+            const postNo = customer?.post_no ? `〒${customer.post_no}` : '';
+            const address = [customer?.address_1 || '', customer?.address_2 || ''].filter(Boolean).join(' ');
+            const subtotal = numOf(invoice.subtotal);
+            const consumption = numOf(invoice.consumption);
+            const total = numOf(invoice.total);
+            const invoiceDate = invoice.create_date || new Date().toISOString();
+
+            // 宛先・請求日・顧客コード
+            setCell('A1', postNo);
+            setCell('A2', address);
+            setCell('A3', customerName ? `${customerName}御中` : '');
+            setCell('G5', formatJapaneseDateForInvoice(invoiceDate));
+            setCell('G6', 'お客様コード');
+            setCell('I6', customerCode);
+
+            // 集計欄。テンプレート側の数式に依存せず、基幹請求データの値を直接入れます。
+            setCell('A13', subtotal); // 10%対象
+            setCell('C13', consumption); // 消費税額(10%)
+            setCell('E13', 0); // 非課税対象
+            setCell('F13', subtotal); // 御買上額(税抜)
+            setCell('H13', 0); // 値引額(税抜)
+            setCell('J13', consumption); // 消費税
+            setCell('L13', total); // 今回御買上額
+            setCell('N13', total); // 今回御請求額
+
+            const startRow = 16;
+            const maxDetailRows = 34; // 16〜49行目を明細エリアとして使用
+            const clearColumns = ['A', 'B', 'C', 'G', 'H', 'I', 'K', 'M', 'O'];
+
+            for (let i = 0; i < maxDetailRows; i += 1) {
+                const rowNo = startRow + i;
+                clearColumns.forEach((col) => {
+                    worksheet.getCell(`${col}${rowNo}`).value = null;
+                });
+            }
+
+            details.slice(0, maxDetailRows).forEach((detail, index) => {
+                const rowNo = startRow + index;
+                const quantity = numOf(detail.quantity);
+                const unitPrice = numOf(detail.unit_price);
+                const amount = quantity * unitPrice;
+                const tax = taxAmountOf(amount, detail.tax_rate);
+
+                setCell(`A${rowNo}`, formatJapaneseMonthDay(invoice.delivery_date || invoice.create_date));
+                setCell(`B${rowNo}`, masterName(detail.major_item));
+                setCell(`C${rowNo}`, detail.detail || '');
+                setCell(`G${rowNo}`, quantity || null);
+                setCell(`H${rowNo}`, '');
+                setCell(`I${rowNo}`, unitPrice || null);
+                setCell(`K${rowNo}`, amount || null);
+                setCell(`M${rowNo}`, tax || null);
+                setCell(`O${rowNo}`, detail.tax_rate ? `${detail.tax_rate}%対象` : '');
+            });
+
+            const remainingRow = startRow + details.length;
+            if (remainingRow < startRow + maxDetailRows) {
+                setCell(`C${remainingRow}`, '■　以下余白　■');
+            }
+
+            if (details.length > maxDetailRows) {
+                window.alert(`明細が${details.length}行あります。テンプレートに収まる先頭${maxDetailRows}行のみ出力しました。`);
+            }
+
+            const fileName = sanitizeFileName(`請求書_${invoice.invoice_id || 'no'}_${customerName || 'customer'}.xlsx`);
+            const outputBuffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([outputBuffer as BlobPart], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            });
+
+            saveAs(blob, fileName);
+        } catch (e) {
+            console.error('[LegacyInvoiceBillingPage] failed to generate invoice Excel', e);
+            window.alert(e instanceof Error ? e.message : '請求書Excelの生成に失敗しました。');
+        } finally {
+            setIsGeneratingExcel(false);
         }
     };
 
@@ -718,6 +857,11 @@ const InvoiceDetailModal: React.FC<{
                         <StatusBadge status={combined.delivery?.delivery_status} kind="delivery" method={combined.delivery?.delivery_method} />
                         <StatusBadge status={combined.payment?.payment_status} kind="payment" />
                     </div>
+
+                    <button onClick={handleGenerateInvoiceExcel} disabled={isGeneratingExcel || isLoading || details.length === 0} className="flex items-center gap-2 bg-slate-800 text-white font-semibold py-2 px-4 rounded-lg hover:bg-slate-900 disabled:bg-slate-400">
+                        {isGeneratingExcel ? <Loader className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />}
+                        請求書Excelを生成
+                    </button>
 
                     {!isIssued && (
                         <button onClick={handleMarkAsIssued} disabled={isMarkingIssued} className="flex items-center gap-2 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400">
