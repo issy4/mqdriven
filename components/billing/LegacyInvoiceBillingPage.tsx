@@ -95,9 +95,15 @@ interface DeliveryRecordRow {
     id: string;
     legacy_invoice_id: string | null;
     invoice_no: string | null;
+    issue_record_id?: string | null;
     delivery_method: string | null;
     delivery_status: string | null;
     to_email: string | null;
+    cc_email?: string | null;
+    bcc_email?: string | null;
+    subject?: string | null;
+    body?: string | null;
+    attachment_file_name?: string | null;
     sent_at: string | null;
 }
 
@@ -139,6 +145,21 @@ interface CombinedInvoice {
 }
 
 type Tab = 'unissued' | 'issued' | 'pending_send' | 'sent' | 'paid' | 'settings';
+
+// ---------------------------------------------------------------------------
+// Defaults
+// ---------------------------------------------------------------------------
+
+const DEFAULT_ATTACHMENT_NAME_TEMPLATE = '請求書_{{invoice_id}}_{{customer_name}}.pdf';
+
+const DEFAULT_EMAIL_SUBJECT_TEMPLATE = '【請求書送付】{{customer_name}} 御中 請求書のご送付';
+
+const DEFAULT_EMAIL_BODY_TEMPLATE = `{{customer_name}} 御中
+
+いつもお世話になっております。
+請求書を添付にてお送りいたします。
+
+ご確認のほど、よろしくお願いいたします。`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -228,13 +249,66 @@ const getRecordByInvoice = <T extends { legacy_invoice_id: string | null; invoic
     return null;
 };
 
+const renderTemplate = (template: string | null | undefined, row: CombinedInvoice): string => {
+    const invoice = row.invoice;
+    const customer = row.customer;
+    const project = row.project;
+
+    const values: Record<string, string> = {
+        invoice_id: invoice.invoice_id || '',
+        order_code: project?.order_code || invoice.order_id || '',
+        customer_name: customer?.customer_name || project?.customer_code || '',
+        customer_code: customer?.customer_code || project?.customer_code || '',
+        project_name: project?.project_name || invoice.note || invoice.specification || '',
+        total: JPY(invoice.total),
+        delivery_date: formatDate(invoice.delivery_date),
+    };
+
+    let result = template || '';
+
+    Object.entries(values).forEach(([key, value]) => {
+        result = result.replace(new RegExp(`{{\\s*${key}\\s*}}`, 'g'), value);
+    });
+
+    return result;
+};
+
+const deliveryMethodLabel = (method: string | null | undefined): string => {
+    if (method === 'email') return 'メール';
+    if (method === 'post') return '郵送';
+    if (method === 'manual') return '手動';
+    return method || '—';
+};
+
+const deliveryStatusLabel = (method: string | null | undefined, status: string | null | undefined): string => {
+    if (!status) return '未送付';
+
+    if (status === 'pending') {
+        if (method === 'email') return 'メール送信待ち';
+        if (method === 'post') return '郵送待ち';
+        if (method === 'manual') return '手動対応待ち';
+        return '送付待ち';
+    }
+
+    if (status === 'sent') {
+        if (method === 'email') return 'メール送信済み';
+        if (method === 'post') return '郵送済み';
+        if (method === 'manual') return '手動対応済み';
+        return '送付済み';
+    }
+
+    if (status === 'failed') return '送付失敗';
+
+    return status;
+};
+
 const STATUS_LABELS: Record<string, string> = {
     not_issued: '未発行',
     draft: '下書き',
     issued: '発行済み',
-    pending: '送信待ち',
-    sent: '送信済み',
-    failed: '送信失敗',
+    pending: '送付待ち',
+    sent: '送付済み',
+    failed: '送付失敗',
     unpaid: '未入金',
     partial: '一部入金',
     paid: '入金確認',
@@ -243,9 +317,10 @@ const STATUS_LABELS: Record<string, string> = {
 const StatusBadge: React.FC<{
     status: string | null | undefined;
     kind: 'issue' | 'delivery' | 'payment';
-}> = ({ status, kind }) => {
+    method?: string | null;
+}> = ({ status, kind, method }) => {
     if (!status) {
-        const fallback = kind === 'issue' ? '未発行' : kind === 'delivery' ? '未送信' : '未入金';
+        const fallback = kind === 'issue' ? '未発行' : kind === 'delivery' ? '未送付' : '未入金';
 
         return (
             <span className="px-2.5 py-0.5 text-xs font-medium rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
@@ -254,7 +329,7 @@ const StatusBadge: React.FC<{
         );
     }
 
-    const label = STATUS_LABELS[status] || status;
+    const label = kind === 'delivery' ? deliveryStatusLabel(method, status) : STATUS_LABELS[status] || status;
 
     const tone =
         status === 'issued' || status === 'sent' || status === 'paid'
@@ -276,13 +351,16 @@ const InvoiceDetailModal: React.FC<{
     combined: CombinedInvoice;
     onClose: () => void;
     onMarkAsIssued: (combined: CombinedInvoice) => Promise<void>;
-}> = ({ combined, onClose, onMarkAsIssued }) => {
+    onMarkAsPendingDelivery: (combined: CombinedInvoice) => Promise<void>;
+}> = ({ combined, onClose, onMarkAsIssued, onMarkAsPendingDelivery }) => {
     const { invoice, project, customer } = combined;
     const [details, setDetails] = useState<InvoiceDetailRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isMarkingIssued, setIsMarkingIssued] = useState(false);
+    const [isMarkingPendingDelivery, setIsMarkingPendingDelivery] = useState(false);
 
     const isIssued = combined.issue?.issue_status === 'issued';
+    const hasDelivery = !!combined.delivery;
 
     useEffect(() => {
         let cancelled = false;
@@ -339,6 +417,22 @@ const InvoiceDetailModal: React.FC<{
             await onMarkAsIssued(combined);
         } finally {
             setIsMarkingIssued(false);
+        }
+    };
+
+    const handleMarkAsPendingDelivery = async () => {
+        const ok = window.confirm(
+            `請求番号 ${invoice.invoice_id || '—'} を「送付待ち」として登録します。\n\nこの処理では実際のメール送信・郵送処理は行いません。よろしいですか？`,
+        );
+
+        if (!ok) return;
+
+        setIsMarkingPendingDelivery(true);
+
+        try {
+            await onMarkAsPendingDelivery(combined);
+        } finally {
+            setIsMarkingPendingDelivery(false);
         }
     };
 
@@ -485,7 +579,11 @@ const InvoiceDetailModal: React.FC<{
                 <div className="p-6 border-t border-slate-200 dark:border-slate-700 flex flex-wrap justify-end gap-3">
                     <div className="flex items-center gap-2 mr-auto">
                         <StatusBadge status={combined.issue?.issue_status} kind="issue" />
-                        <StatusBadge status={combined.delivery?.delivery_status} kind="delivery" />
+                        <StatusBadge
+                            status={combined.delivery?.delivery_status}
+                            kind="delivery"
+                            method={combined.delivery?.delivery_method}
+                        />
                         <StatusBadge status={combined.payment?.payment_status} kind="payment" />
                     </div>
 
@@ -501,6 +599,21 @@ const InvoiceDetailModal: React.FC<{
                                 <CheckCircle className="w-5 h-5" />
                             )}
                             発行済みとして登録
+                        </button>
+                    )}
+
+                    {isIssued && !hasDelivery && (
+                        <button
+                            onClick={handleMarkAsPendingDelivery}
+                            disabled={isMarkingPendingDelivery}
+                            className="flex items-center gap-2 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-slate-400"
+                        >
+                            {isMarkingPendingDelivery ? (
+                                <Loader className="w-5 h-5 animate-spin" />
+                            ) : (
+                                <Send className="w-5 h-5" />
+                            )}
+                            送付待ちにする
                         </button>
                     )}
 
@@ -528,9 +641,9 @@ const emptySetting = (): Partial<BillingSettingRow> => ({
     billing_email: '',
     billing_cc: '',
     billing_bcc: '',
-    email_subject_template: '',
-    email_body_template: '',
-    attachment_name_template: '',
+    email_subject_template: DEFAULT_EMAIL_SUBJECT_TEMPLATE,
+    email_body_template: DEFAULT_EMAIL_BODY_TEMPLATE,
+    attachment_name_template: DEFAULT_ATTACHMENT_NAME_TEMPLATE,
     requires_manual_review: true,
     notes: '',
     is_active: true,
@@ -541,7 +654,13 @@ const BillingSettingModal: React.FC<{
     onClose: () => void;
     onSaved: () => void;
 }> = ({ setting, onClose, onSaved }) => {
-    const initialSetting = setting || emptySetting();
+    const initialSetting: Partial<BillingSettingRow> = {
+        ...emptySetting(),
+        ...(setting || {}),
+        attachment_name_template: setting?.attachment_name_template || DEFAULT_ATTACHMENT_NAME_TEMPLATE,
+        email_subject_template: setting?.email_subject_template || DEFAULT_EMAIL_SUBJECT_TEMPLATE,
+        email_body_template: setting?.email_body_template || DEFAULT_EMAIL_BODY_TEMPLATE,
+    };
 
     const [form, setForm] = useState<Partial<BillingSettingRow>>(initialSetting);
     const [isSaving, setIsSaving] = useState(false);
@@ -664,9 +783,9 @@ const BillingSettingModal: React.FC<{
                 billing_email: form.billing_email || null,
                 billing_cc: form.billing_cc || null,
                 billing_bcc: form.billing_bcc || null,
-                email_subject_template: form.email_subject_template || null,
-                email_body_template: form.email_body_template || null,
-                attachment_name_template: form.attachment_name_template || null,
+                email_subject_template: form.email_subject_template || DEFAULT_EMAIL_SUBJECT_TEMPLATE,
+                email_body_template: form.email_body_template || DEFAULT_EMAIL_BODY_TEMPLATE,
+                attachment_name_template: form.attachment_name_template || DEFAULT_ATTACHMENT_NAME_TEMPLATE,
                 requires_manual_review: form.requires_manual_review ?? true,
                 notes: form.notes || null,
                 is_active: form.is_active ?? true,
@@ -950,8 +1069,8 @@ const BillingSettingModal: React.FC<{
 const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
     { id: 'unissued', label: '未発行', icon: FileText },
     { id: 'issued', label: '発行済み', icon: CheckCircle },
-    { id: 'pending_send', label: '送信待ち', icon: Clock },
-    { id: 'sent', label: '送信済み', icon: Send },
+    { id: 'pending_send', label: '送付待ち', icon: Clock },
+    { id: 'sent', label: '送付済み', icon: Send },
     { id: 'paid', label: '入金確認', icon: Mail },
     { id: 'settings', label: '顧客別設定', icon: Settings },
 ];
@@ -994,7 +1113,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             }
 
             const invoiceRows = ((invoicesData || []) as InvoiceLegacyRow[]);
-
             setInvoices(invoiceRows);
 
             const projectUuids = Array.from(
@@ -1115,7 +1233,9 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
             const { data: deliveryData, error: deliveryError } = await supabase
                 .from('invoice_delivery_records')
-                .select('id, legacy_invoice_id, invoice_no, delivery_method, delivery_status, to_email, sent_at');
+                .select(
+                    'id, legacy_invoice_id, invoice_no, issue_record_id, delivery_method, delivery_status, to_email, cc_email, bcc_email, subject, body, attachment_file_name, sent_at',
+                );
 
             if (deliveryError) {
                 logSupabaseError('invoice_delivery_records', deliveryError);
@@ -1233,10 +1353,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             rows = rows.filter((r) => {
                 return (
                     r.issue?.issue_status === 'issued' &&
-                    (!r.delivery ||
-                        !r.delivery.delivery_status ||
-                        r.delivery.delivery_status === 'pending' ||
-                        r.delivery.delivery_status === 'draft')
+                    r.delivery?.delivery_status === 'pending'
                 );
             });
         } else if (activeTab === 'sent') {
@@ -1275,6 +1392,66 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 (s.billing_email || '').toLowerCase().includes(q),
         );
     }, [settings, searchTerm]);
+
+    const fetchBillingSettingForInvoice = async (combined: CombinedInvoice): Promise<BillingSettingRow | null> => {
+        const supabase = getSupabase();
+        const customer = combined.customer;
+
+        if (!customer) return null;
+
+        const baseSelect =
+            'id, customer_id, customer_code, customer_name, delivery_method, billing_email, billing_cc, billing_bcc, email_subject_template, email_body_template, attachment_name_template, requires_manual_review, notes, is_active';
+
+        if (customer.id) {
+            const { data, error } = await supabase
+                .from('customer_billing_settings')
+                .select(baseSelect)
+                .eq('is_active', true)
+                .eq('customer_id', customer.id)
+                .limit(1);
+
+            if (error) {
+                logSupabaseError('customer_billing_settings by customer_id', error);
+                throw error;
+            }
+
+            if (data && data.length > 0) return data[0] as BillingSettingRow;
+        }
+
+        if (customer.customer_code) {
+            const { data, error } = await supabase
+                .from('customer_billing_settings')
+                .select(baseSelect)
+                .eq('is_active', true)
+                .eq('customer_code', customer.customer_code)
+                .limit(1);
+
+            if (error) {
+                logSupabaseError('customer_billing_settings by customer_code', error);
+                throw error;
+            }
+
+            if (data && data.length > 0) return data[0] as BillingSettingRow;
+        }
+
+        if (customer.customer_name) {
+            const { data, error } = await supabase
+                .from('customer_billing_settings')
+                .select(baseSelect)
+                .eq('is_active', true)
+                .eq('customer_name', customer.customer_name)
+                .limit(1);
+
+            if (error) {
+                logSupabaseError('customer_billing_settings by customer_name', error);
+                throw error;
+            }
+
+            if (data && data.length > 0) return data[0] as BillingSettingRow;
+        }
+
+        return null;
+    };
 
     const handleMarkAsIssued = useCallback(
         async (combined: CombinedInvoice) => {
@@ -1327,6 +1504,82 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             } catch (e) {
                 console.error('[LegacyInvoiceBillingPage] failed to mark invoice as issued', e);
                 setError(e instanceof Error ? e.message : '発行済み登録に失敗しました。');
+                throw e;
+            }
+        },
+        [loadInvoiceData],
+    );
+
+    const handleMarkAsPendingDelivery = useCallback(
+        async (combined: CombinedInvoice) => {
+            const supabase = getSupabase();
+
+            try {
+                if (combined.issue?.issue_status !== 'issued' || !combined.issue?.id) {
+                    throw new Error('先に発行済みとして登録してください。');
+                }
+
+                const setting = await fetchBillingSettingForInvoice(combined);
+
+                if (!setting) {
+                    throw new Error('この顧客の有効な顧客別設定が見つかりません。先に顧客別設定を登録してください。');
+                }
+
+                const method = setting.delivery_method || 'email';
+
+                if (method === 'email' && !setting.billing_email) {
+                    throw new Error('送信方法がメールですが、請求先メールが設定されていません。');
+                }
+
+                const subjectTemplate = setting.email_subject_template || DEFAULT_EMAIL_SUBJECT_TEMPLATE;
+                const bodyTemplate = setting.email_body_template || DEFAULT_EMAIL_BODY_TEMPLATE;
+                const attachmentNameTemplate =
+                    setting.attachment_name_template || DEFAULT_ATTACHMENT_NAME_TEMPLATE;
+
+                const subject = method === 'email' ? renderTemplate(subjectTemplate, combined) : null;
+                const body = method === 'email' ? renderTemplate(bodyTemplate, combined) : null;
+                const attachmentFileName = renderTemplate(attachmentNameTemplate, combined);
+
+                const payload = {
+                    legacy_invoice_id: combined.invoice.row_uuid,
+                    invoice_no: combined.invoice.invoice_id,
+                    issue_record_id: combined.issue.id,
+                    delivery_method: method,
+                    delivery_status: 'pending',
+                    to_email: method === 'email' ? setting.billing_email : null,
+                    cc_email: method === 'email' ? setting.billing_cc : null,
+                    bcc_email: method === 'email' ? setting.billing_bcc : null,
+                    subject,
+                    body,
+                    attachment_file_name: attachmentFileName,
+                    error_message: null,
+                };
+
+                if (combined.delivery?.id) {
+                    const { error } = await supabase
+                        .from('invoice_delivery_records')
+                        .update(payload)
+                        .eq('id', combined.delivery.id);
+
+                    if (error) {
+                        logSupabaseError('invoice_delivery_records update pending', error);
+                        throw error;
+                    }
+                } else {
+                    const { error } = await supabase.from('invoice_delivery_records').insert(payload);
+
+                    if (error) {
+                        logSupabaseError('invoice_delivery_records insert pending', error);
+                        throw error;
+                    }
+                }
+
+                setSelected(null);
+                await loadInvoiceData();
+                setActiveTab('pending_send');
+            } catch (e) {
+                console.error('[LegacyInvoiceBillingPage] failed to mark invoice as pending delivery', e);
+                setError(e instanceof Error ? e.message : '送付待ち登録に失敗しました。');
                 throw e;
             }
         },
@@ -1471,15 +1724,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                                         <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">
                                             {s.customer_name || '—'}
                                         </td>
-                                        <td className="px-6 py-4">
-                                            {s.delivery_method === 'email'
-                                                ? 'メール'
-                                                : s.delivery_method === 'post'
-                                                  ? '郵送'
-                                                  : s.delivery_method === 'manual'
-                                                    ? '手動'
-                                                    : s.delivery_method || '—'}
-                                        </td>
+                                        <td className="px-6 py-4">{deliveryMethodLabel(s.delivery_method)}</td>
                                         <td className="px-6 py-4">{s.billing_email || '—'}</td>
                                         <td className="px-6 py-4 text-center">
                                             {s.requires_manual_review ? '要' : '—'}
@@ -1531,7 +1776,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                                 <th className="px-4 py-3 text-right">消費税</th>
                                 <th className="px-4 py-3 text-right">合計</th>
                                 <th className="px-4 py-3 text-center">発行</th>
-                                <th className="px-4 py-3 text-center">送信</th>
+                                <th className="px-4 py-3 text-center">送付</th>
                                 <th className="px-4 py-3 text-center">入金</th>
                             </tr>
                         </thead>
@@ -1572,7 +1817,11 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                                             <StatusBadge status={row.issue?.issue_status} kind="issue" />
                                         </td>
                                         <td className="px-4 py-3 text-center">
-                                            <StatusBadge status={row.delivery?.delivery_status} kind="delivery" />
+                                            <StatusBadge
+                                                status={row.delivery?.delivery_status}
+                                                kind="delivery"
+                                                method={row.delivery?.delivery_method}
+                                            />
                                         </td>
                                         <td className="px-4 py-3 text-center">
                                             <StatusBadge status={row.payment?.payment_status} kind="payment" />
@@ -1597,6 +1846,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                     combined={selected}
                     onClose={() => setSelected(null)}
                     onMarkAsIssued={handleMarkAsIssued}
+                    onMarkAsPendingDelivery={handleMarkAsPendingDelivery}
                 />
             )}
 
