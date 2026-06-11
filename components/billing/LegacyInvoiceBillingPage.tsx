@@ -366,6 +366,464 @@ const StatusBadge: React.FC<{
     return <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${tone}`}>{label}</span>;
 };
 
+
+// ---------------------------------------------------------------------------
+// Invoice PDF Preview Modal
+// ---------------------------------------------------------------------------
+
+const InvoicePdfPreviewModal: React.FC<{
+    combined: CombinedInvoice;
+    details: InvoiceDetailRow[];
+    masterName: (legacyId: string | null | undefined) => string;
+    onClose: () => void;
+}> = ({ combined, details, masterName, onClose }) => {
+    const { invoice, project, customer } = combined;
+    const subtotal = numOf(invoice.subtotal);
+    const consumption = numOf(invoice.consumption);
+    const total = numOf(invoice.total);
+    const invoiceDate = invoice.create_date || new Date().toISOString();
+    const invoiceMonthDay = formatJapaneseMonthDay(invoice.delivery_date || invoice.create_date);
+    const maxRows = 14;
+    const taxRowCount = 1;
+    const spacerRowCount = 1;
+    const blankRows = Math.max(0, maxRows - details.length - taxRowCount - spacerRowCount);
+
+    const printInvoice = () => {
+        window.print();
+    };
+
+    return (
+        <div className="fixed inset-0 bg-slate-950/70 z-[80] overflow-y-auto p-4 print:p-0 print:bg-white">
+            <style>{`
+                @page {
+                    size: A4 portrait;
+                    margin: 8mm;
+                }
+
+                @media print {
+                    body * {
+                        visibility: hidden !important;
+                    }
+                    .invoice-print-area,
+                    .invoice-print-area * {
+                        visibility: visible !important;
+                    }
+                    .invoice-print-area {
+                        position: absolute !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 100% !important;
+                        box-shadow: none !important;
+                    }
+                    .invoice-preview-toolbar {
+                        display: none !important;
+                    }
+                    .invoice-a4-page {
+                        margin: 0 !important;
+                        box-shadow: none !important;
+                        width: 194mm !important;
+                        min-height: 281mm !important;
+                        padding: 0 !important;
+                    }
+                }
+
+                .invoice-a4-page {
+                    width: 194mm;
+                    min-height: 281mm;
+                    margin: 0 auto;
+                    background: white;
+                    color: #111;
+                    box-sizing: border-box;
+                    padding: 0;
+                    font-family: 'Yu Gothic', 'Meiryo', Arial, sans-serif;
+                    font-size: 10px;
+                    line-height: 1.35;
+                }
+
+                .invoice-title {
+                    text-align: center;
+                    font-size: 22px;
+                    letter-spacing: 12px;
+                    font-weight: 700;
+                    margin-top: 2mm;
+                    margin-bottom: 2mm;
+                }
+
+                .invoice-top {
+                    display: grid;
+                    grid-template-columns: 48% 20% 32%;
+                    column-gap: 4mm;
+                    min-height: 48mm;
+                }
+
+                .invoice-address {
+                    padding-left: 9mm;
+                    padding-top: 3mm;
+                    font-size: 11px;
+                }
+
+                .invoice-address .customer-name {
+                    margin-top: 5mm;
+                    font-size: 12px;
+                }
+
+                .invoice-meta {
+                    padding-top: 8mm;
+                    font-size: 10px;
+                }
+
+                .invoice-meta-row {
+                    display: grid;
+                    grid-template-columns: 66px 1fr;
+                    gap: 3mm;
+                    margin-bottom: 3mm;
+                    align-items: center;
+                }
+
+                .seal-box {
+                    width: 34mm;
+                    height: 14mm;
+                    border: 1px solid #111;
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    margin-top: 2mm;
+                    font-size: 7px;
+                    text-align: center;
+                }
+
+                .seal-box div {
+                    border-right: 1px solid #111;
+                    padding-top: 1mm;
+                }
+                .seal-box div:last-child {
+                    border-right: none;
+                }
+
+                .invoice-company {
+                    position: relative;
+                    padding-top: 11mm;
+                    font-size: 8px;
+                    line-height: 1.35;
+                    min-height: 42mm;
+                }
+
+                .invoice-company .company-name-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 2mm;
+                    font-size: 14px;
+                    font-weight: 700;
+                    margin-bottom: 1mm;
+                    position: relative;
+                    z-index: 2;
+                }
+
+                .invoice-company .bp-mark {
+                    width: 9mm;
+                    height: 6mm;
+                    border: 1px solid #222;
+                    border-radius: 50%;
+                    font-size: 7px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: 700;
+                }
+
+                .company-stamp {
+                    position: absolute;
+                    top: 1mm;
+                    left: 33mm;
+                    width: 25mm;
+                    opacity: 0.82;
+                    z-index: 1;
+                }
+
+                .bank-lines {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    column-gap: 5mm;
+                    font-size: 7px;
+                    margin-top: 2mm;
+                    margin-bottom: 1.5mm;
+                    padding-left: 82mm;
+                }
+
+                .invoice-message {
+                    font-size: 8px;
+                    margin-bottom: 1mm;
+                }
+
+                .summary-table,
+                .detail-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    table-layout: fixed;
+                    color: #111;
+                }
+
+                .summary-table th,
+                .summary-table td {
+                    border: 1px solid #111;
+                    height: 5.5mm;
+                    text-align: center;
+                    vertical-align: middle;
+                    padding: 1mm;
+                    font-size: 8px;
+                    font-weight: 400;
+                }
+
+                .summary-table td {
+                    font-size: 10px;
+                    text-align: right;
+                    padding-right: 1.5mm;
+                }
+
+                .detail-table {
+                    margin-top: 7mm;
+                    font-size: 10px;
+                }
+
+                .detail-table th,
+                .detail-table td {
+                    border: 1px solid #111;
+                    vertical-align: middle;
+                    padding: 1.5mm;
+                    height: 10mm;
+                }
+
+                .detail-table th {
+                    text-align: center;
+                    height: 8mm;
+                    font-weight: 600;
+                    letter-spacing: 1px;
+                }
+
+                .detail-table .num {
+                    text-align: right;
+                    white-space: nowrap;
+                }
+
+                .detail-table .center {
+                    text-align: center;
+                }
+
+                .detail-table .small {
+                    font-size: 8px;
+                    line-height: 1.25;
+                }
+
+                .detail-table .product-cell {
+                    line-height: 1.25;
+                    word-break: break-word;
+                }
+
+                .page-count {
+                    text-align: right;
+                    margin-top: 6mm;
+                    font-size: 9px;
+                }
+            `}</style>
+
+            <div className="invoice-preview-toolbar max-w-[980px] mx-auto mb-4 flex justify-end gap-3">
+                <button
+                    onClick={printInvoice}
+                    className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700"
+                >
+                    印刷 / PDF保存
+                </button>
+                <button
+                    onClick={onClose}
+                    className="bg-slate-100 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200"
+                >
+                    閉じる
+                </button>
+            </div>
+
+            <div className="invoice-print-area">
+                <div className="invoice-a4-page shadow-2xl">
+                    <div className="invoice-title">請　求　書</div>
+
+                    <div className="invoice-top">
+                        <div className="invoice-address">
+                            <div>{customer?.post_no ? `〒${customer.post_no}` : ''}</div>
+                            <div>{[customer?.address_1, customer?.address_2].filter(Boolean).join(' ')}</div>
+                            <div className="customer-name">{customer?.customer_name || ''}御中</div>
+                        </div>
+
+                        <div className="invoice-meta">
+                            <div style={{ marginBottom: '5mm', fontSize: '11px' }}>{formatJapaneseDateForInvoice(invoiceDate)}</div>
+                            <div className="invoice-meta-row">
+                                <span>お客様コード</span>
+                                <span>{customer?.customer_code || project?.customer_code || ''}</span>
+                            </div>
+                            <div className="invoice-meta-row">
+                                <span>担　当　者</span>
+                                <span>横山　久</span>
+                            </div>
+                            <div className="seal-box">
+                                <div>担当者</div>
+                                <div>検　印</div>
+                            </div>
+                        </div>
+
+                        <div className="invoice-company">
+                            <img src="/images/company-stamp.png" className="company-stamp" alt="社印" />
+                            <div className="company-name-row">
+                                <span className="bp-mark">bp</span>
+                                <span>文唱堂印刷株式会社</span>
+                            </div>
+                            <div>本　　社　東京都千代田区神田佐久間町3-37</div>
+                            <div>〒101-0025　TEL.03(3851)0111㈹</div>
+                            <div>FAX.03(3861)1979</div>
+                            <div style={{ marginTop: '1mm' }}>町屋工場　東京都荒川区町屋8-22-10</div>
+                            <div>〒116-0001　TEL.03(3819)2500㈹</div>
+                            <div>FAX.03(3819)2501</div>
+                        </div>
+                    </div>
+
+                    <div className="bank-lines">
+                        <div>■お振込先銀行　三菱UFJ銀行 神田駅前支店(当)2021103</div>
+                        <div>みずほ銀行 上野支店(当)0103458</div>
+                        <div>　三菱UFJ銀行 堀留支店(当)0301474</div>
+                        <div>三井住友銀行 神田支店(当)2003693</div>
+                    </div>
+                    <div className="invoice-message">
+                        毎度ありがとうございます。下記の通り御請求申し上げます。　　■適格請求書登録番号 ： T3-0100-0102-8004
+                    </div>
+
+                    <table className="summary-table">
+                        <colgroup>
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '11%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '11%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '9%' }} />
+                            <col style={{ width: '9%' }} />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>10％対象</th>
+                                <th>消費税額(10%)</th>
+                                <th>非課税対象</th>
+                                <th></th>
+                                <th>御買上額(税抜)</th>
+                                <th>値引額(税抜)</th>
+                                <th>消 費 税</th>
+                                <th>今回御買上額</th>
+                                <th>今回御請求額</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>{subtotal.toLocaleString()}</td>
+                                <td>{consumption.toLocaleString()}</td>
+                                <td>0</td>
+                                <td></td>
+                                <td>{subtotal.toLocaleString()}</td>
+                                <td>0</td>
+                                <td>{consumption.toLocaleString()}</td>
+                                <td>{total.toLocaleString()}</td>
+                                <td>{total.toLocaleString()}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <table className="detail-table">
+                        <colgroup>
+                            <col style={{ width: '10%' }} />
+                            <col style={{ width: '2.8%' }} />
+                            <col style={{ width: '35.2%' }} />
+                            <col style={{ width: '9%' }} />
+                            <col style={{ width: '5%' }} />
+                            <col style={{ width: '8%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '10%' }} />
+                            <col style={{ width: '8%' }} />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>月日</th>
+                                <th>区<br />分</th>
+                                <th>品　　名</th>
+                                <th>数　量</th>
+                                <th>単位</th>
+                                <th>単　価</th>
+                                <th>金　額</th>
+                                <th>消費税等</th>
+                                <th>摘　要</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {details.map((detail) => {
+                                const quantity = numOf(detail.quantity);
+                                const unitPrice = numOf(detail.unit_price);
+                                const amount = quantity * unitPrice;
+                                return (
+                                    <tr key={detail.row_uuid}>
+                                        <td>{invoiceMonthDay}</td>
+                                        <td className="center small">{masterName(detail.major_item)}</td>
+                                        <td className="product-cell">{detail.detail || ''}</td>
+                                        <td className="num">{quantity ? quantity.toLocaleString() : ''}</td>
+                                        <td className="center">{quantity ? '式' : ''}</td>
+                                        <td className="num">{unitPrice ? unitPrice.toLocaleString() : ''}</td>
+                                        <td className="num">{amount ? amount.toLocaleString() : ''}</td>
+                                        <td className="center">【外　税】</td>
+                                        <td className="small">{masterName(detail.medium_item)}</td>
+                                    </tr>
+                                );
+                            })}
+
+                            <tr>
+                                <td>{invoiceMonthDay}</td>
+                                <td></td>
+                                <td className="small">【 消　費　税　等 】<br />（対象額　{subtotal.toLocaleString()}円）</td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td className="num">{consumption.toLocaleString()}</td>
+                                <td></td>
+                            </tr>
+
+                            <tr>
+                                <td></td>
+                                <td></td>
+                                <td className="center">■　以下余白　■</td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                            </tr>
+
+                            {Array.from({ length: blankRows }).map((_, index) => (
+                                <tr key={`blank-${index}`}>
+                                    <td>&nbsp;</td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+
+                    <div className="page-count">1ページ中1ページ目</div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // ---------------------------------------------------------------------------
 // Detail Modal
 // ---------------------------------------------------------------------------
@@ -387,6 +845,7 @@ const InvoiceDetailModal: React.FC<{
     const [isMarkingDeliverySent, setIsMarkingDeliverySent] = useState(false);
     const [isMarkingPaid, setIsMarkingPaid] = useState(false);
     const [isGeneratingExcel, setIsGeneratingExcel] = useState(false);
+    const [showPdfPreview, setShowPdfPreview] = useState(false);
 
     const isIssued = combined.issue?.issue_status === 'issued';
     const hasDelivery = !!combined.delivery;
@@ -858,9 +1317,9 @@ const InvoiceDetailModal: React.FC<{
                         <StatusBadge status={combined.payment?.payment_status} kind="payment" />
                     </div>
 
-                    <button onClick={handleGenerateInvoiceExcel} disabled={isGeneratingExcel || isLoading || details.length === 0} className="flex items-center gap-2 bg-slate-800 text-white font-semibold py-2 px-4 rounded-lg hover:bg-slate-900 disabled:bg-slate-400">
-                        {isGeneratingExcel ? <Loader className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />}
-                        請求書Excelを生成
+                    <button onClick={() => setShowPdfPreview(true)} disabled={isLoading || details.length === 0} className="flex items-center gap-2 bg-slate-800 text-white font-semibold py-2 px-4 rounded-lg hover:bg-slate-900 disabled:bg-slate-400">
+                        <FileText className="w-5 h-5" />
+                        請求書PDFプレビュー
                     </button>
 
                     {!isIssued && (
@@ -896,6 +1355,14 @@ const InvoiceDetailModal: React.FC<{
                     </button>
                 </div>
             </div>
+            {showPdfPreview && (
+                <InvoicePdfPreviewModal
+                    combined={combined}
+                    details={details}
+                    masterName={masterName}
+                    onClose={() => setShowPdfPreview(false)}
+                />
+            )}
         </div>
     );
 };
