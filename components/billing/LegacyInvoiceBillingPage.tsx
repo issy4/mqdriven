@@ -398,6 +398,7 @@ const InvoiceDetailModal: React.FC<{
     const { invoice, project, customer, delivery, payment } = combined;
     const [details, setDetails] = useState<InvoiceDetailRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [masterMap, setMasterMap] = useState<Record<string, string>>({});
     const [isMarkingIssued, setIsMarkingIssued] = useState(false);
     const [isMarkingPendingDelivery, setIsMarkingPendingDelivery] = useState(false);
     const [isMarkingDeliverySent, setIsMarkingDeliverySent] = useState(false);
@@ -432,10 +433,41 @@ const InvoiceDetailModal: React.FC<{
 
                 if (!cancelled) {
                     const sorted = ((data || []) as InvoiceDetailRow[])
-                        .slice()
-                        .sort((a, b) => numOf(a.record_no) - numOf(b.record_no));
+    .slice()
+    .sort((a, b) => numOf(a.record_no) - numOf(b.record_no));
 
-                    setDetails(sorted);
+setDetails(sorted);
+
+const masterLegacyIds = Array.from(
+    new Set(
+        sorted
+            .flatMap((d) => [d.major_item, d.medium_item])
+            .filter((v): v is string => !!v),
+    ),
+);
+
+if (masterLegacyIds.length > 0) {
+    const { data: masterData, error: masterError } = await supabase
+        .from('master_legacy')
+        .select('legacy_id, name')
+        .in('legacy_id', masterLegacyIds);
+
+    if (masterError) {
+        logSupabaseError('master_legacy', masterError);
+    } else {
+        const nextMasterMap: Record<string, string> = {};
+
+        ((masterData || []) as { legacy_id: string | null; name: string | null }[]).forEach((m) => {
+            if (m.legacy_id) {
+                nextMasterMap[m.legacy_id] = m.name || m.legacy_id;
+            }
+        });
+
+        setMasterMap(nextMasterMap);
+    }
+} else {
+    setMasterMap({});
+}
                 }
             } catch (e) {
                 console.error('[LegacyInvoiceBillingPage] failed to load invoice details', e);
@@ -728,8 +760,12 @@ const InvoiceDetailModal: React.FC<{
                                                 className="border-t border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300"
                                             >
                                                 <td className="px-3 py-2">{d.record_no || '—'}</td>
-                                                <td className="px-3 py-2">{d.major_item || '—'}</td>
-                                                <td className="px-3 py-2">{d.medium_item || '—'}</td>
+                                                <td className="px-3 py-2">
+    {d.major_item ? masterMap[d.major_item] || d.major_item : '—'}
+</td>
+<td className="px-3 py-2">
+    {d.medium_item ? masterMap[d.medium_item] || d.medium_item : '—'}
+</td>
                                                 <td className="px-3 py-2">{d.detail || '—'}</td>
                                                 <td className="px-3 py-2 text-right">
                                                     {numOf(d.quantity).toLocaleString()}
