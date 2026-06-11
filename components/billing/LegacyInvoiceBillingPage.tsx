@@ -96,9 +96,9 @@ interface PaymentMatchRow {
     id: string;
     legacy_invoice_id: string | null;
     invoice_no: string | null;
-    expected_amount: number | null;
-    paid_amount: number | null;
-    balance_amount: number | null;
+    expected_amount: number | string | null;
+    paid_amount: number | string | null;
+    balance_amount: number | string | null;
     payment_status: string | null;
     payment_date: string | null;
 }
@@ -210,10 +210,7 @@ const getRecordByInvoice = <T extends { legacy_invoice_id: string | null; invoic
     map: Record<string, T>,
     invoice: InvoiceLegacyRow,
 ): T | null => {
-    const keys = [
-        invoice.row_uuid,
-        invoice.invoice_id,
-    ].filter((v): v is string => !!v);
+    const keys = [invoice.row_uuid, invoice.invoice_id].filter((v): v is string => !!v);
 
     for (const key of keys) {
         if (map[key]) return map[key];
@@ -254,10 +251,10 @@ const StatusBadge: React.FC<{
         status === 'issued' || status === 'sent' || status === 'paid'
             ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
             : status === 'failed'
-                ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
-                : status === 'partial' || status === 'pending'
-                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300'
-                    : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
+              ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+              : status === 'partial' || status === 'pending'
+                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300'
+                : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
 
     return <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${tone}`}>{label}</span>;
 };
@@ -269,10 +266,14 @@ const StatusBadge: React.FC<{
 const InvoiceDetailModal: React.FC<{
     combined: CombinedInvoice;
     onClose: () => void;
-}> = ({ combined, onClose }) => {
+    onMarkAsIssued: (combined: CombinedInvoice) => Promise<void>;
+}> = ({ combined, onClose, onMarkAsIssued }) => {
     const { invoice, project, customer } = combined;
     const [details, setDetails] = useState<InvoiceDetailRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isMarkingIssued, setIsMarkingIssued] = useState(false);
+
+    const isIssued = combined.issue?.issue_status === 'issued';
 
     useEffect(() => {
         let cancelled = false;
@@ -316,6 +317,22 @@ const InvoiceDetailModal: React.FC<{
         };
     }, [invoice.row_uuid]);
 
+    const handleMarkAsIssued = async () => {
+        const ok = window.confirm(
+            `請求番号 ${invoice.invoice_id || '—'} を「発行済み」として登録します。\n\nこの処理ではPDF生成やメール送信は行いません。よろしいですか？`,
+        );
+
+        if (!ok) return;
+
+        setIsMarkingIssued(true);
+
+        try {
+            await onMarkAsIssued(combined);
+        } finally {
+            setIsMarkingIssued(false);
+        }
+    };
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
@@ -323,7 +340,9 @@ const InvoiceDetailModal: React.FC<{
                     <div>
                         <h2 className="text-2xl font-bold text-slate-900 dark:text-white">請求書詳細</h2>
                         <p className="text-sm text-slate-500">請求番号: {invoice.invoice_id || '—'}</p>
-                        <p className="text-sm text-slate-500">受注番号: {project?.order_code || invoice.order_id || '—'}</p>
+                        <p className="text-sm text-slate-500">
+                            受注番号: {project?.order_code || invoice.order_id || '—'}
+                        </p>
                     </div>
                     <button
                         onClick={onClose}
@@ -358,7 +377,11 @@ const InvoiceDetailModal: React.FC<{
                     <div className="mb-4 text-sm whitespace-pre-wrap">
                         <span className="font-medium text-slate-500">品名: </span>
                         <span className="text-slate-700 dark:text-slate-300">
-                            {project?.project_name || invoice.note || invoice.specification || invoice.pattern_name || '—'}
+                            {project?.project_name ||
+                                invoice.note ||
+                                invoice.specification ||
+                                invoice.pattern_name ||
+                                '—'}
                         </span>
                     </div>
 
@@ -420,7 +443,9 @@ const InvoiceDetailModal: React.FC<{
                                                     {numOf(d.quantity).toLocaleString()}
                                                 </td>
                                                 <td className="px-3 py-2 text-right">{JPY(d.unit_price)}</td>
-                                                <td className="px-3 py-2 text-right">{d.tax_rate ? `${d.tax_rate}%` : '—'}</td>
+                                                <td className="px-3 py-2 text-right">
+                                                    {d.tax_rate ? `${d.tax_rate}%` : '—'}
+                                                </td>
                                                 <td className="px-3 py-2 text-right font-medium">{JPY(amount)}</td>
                                             </tr>
                                         );
@@ -454,6 +479,22 @@ const InvoiceDetailModal: React.FC<{
                         <StatusBadge status={combined.delivery?.delivery_status} kind="delivery" />
                         <StatusBadge status={combined.payment?.payment_status} kind="payment" />
                     </div>
+
+                    {!isIssued && (
+                        <button
+                            onClick={handleMarkAsIssued}
+                            disabled={isMarkingIssued}
+                            className="flex items-center gap-2 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400"
+                        >
+                            {isMarkingIssued ? (
+                                <Loader className="w-5 h-5 animate-spin" />
+                            ) : (
+                                <CheckCircle className="w-5 h-5" />
+                            )}
+                            発行済みとして登録
+                        </button>
+                    )}
+
                     <button
                         onClick={onClose}
                         className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600"
@@ -537,9 +578,7 @@ const BillingSettingModal: React.FC<{
                     throw error;
                 }
             } else {
-                const { error } = await supabase
-                    .from('customer_billing_settings')
-                    .insert(payload);
+                const { error } = await supabase.from('customer_billing_settings').insert(payload);
 
                 if (error) {
                     logSupabaseError('customer_billing_settings insert', error);
@@ -797,82 +836,67 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
             setInvoices(invoiceRows);
 
-            // -------------------------------------------------------------------
-            // projects_legacy
-            // invoices_legacy.project_uuid -> projects_legacy.row_uuid
-            // fallback:
-            // invoices_legacy.project_id -> projects_legacy.project_id
-            // -------------------------------------------------------------------
-
             const projectUuids = Array.from(
-    new Set(
-        invoiceRows
-            .map((invoice) => invoice.project_uuid)
-            .filter((id): id is string => !!id),
-    ),
-);
+                new Set(
+                    invoiceRows
+                        .map((invoice) => invoice.project_uuid)
+                        .filter((id): id is string => !!id),
+                ),
+            );
 
-const projectIds = Array.from(
-    new Set(
-        invoiceRows
-            .map((invoice) => invoice.project_id)
-            .filter((id): id is string => !!id),
-    ),
-);
+            const projectIds = Array.from(
+                new Set(
+                    invoiceRows
+                        .map((invoice) => invoice.project_id)
+                        .filter((id): id is string => !!id),
+                ),
+            );
 
-const mergedProjectMap: Record<string, ProjectLegacyRow> = {};
+            const mergedProjectMap: Record<string, ProjectLegacyRow> = {};
 
-if (projectUuids.length > 0) {
-    const { data, error: projectsByUuidError } = await supabase
-        .from('projects_legacy')
-        .select(
-            'id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code',
-        )
-        .in('id', projectUuids);
+            if (projectUuids.length > 0) {
+                const { data, error: projectsByUuidError } = await supabase
+                    .from('projects_legacy')
+                    .select(
+                        'id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code',
+                    )
+                    .in('id', projectUuids);
 
-    if (projectsByUuidError) {
-        logSupabaseError('projects_legacy by id', projectsByUuidError);
-        throw projectsByUuidError;
-    }
+                if (projectsByUuidError) {
+                    logSupabaseError('projects_legacy by id', projectsByUuidError);
+                    throw projectsByUuidError;
+                }
 
-    ((data || []) as ProjectLegacyRow[]).forEach((p) => {
-        if (p.id) mergedProjectMap[p.id] = p;
-        if (p.project_id) mergedProjectMap[p.project_id] = p;
-    });
+                ((data || []) as ProjectLegacyRow[]).forEach((p) => {
+                    if (p.id) mergedProjectMap[p.id] = p;
+                    if (p.project_id) mergedProjectMap[p.project_id] = p;
+                });
 
-    console.log('[LegacyInvoiceBillingPage] projects by id count', data?.length);
-}
+                console.log('[LegacyInvoiceBillingPage] projects by id count', data?.length);
+            }
 
-if (projectIds.length > 0) {
-    const { data, error: projectsByProjectIdError } = await supabase
-        .from('projects_legacy')
-        .select(
-            'id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code',
-        )
-        .in('project_id', projectIds);
+            if (projectIds.length > 0) {
+                const { data, error: projectsByProjectIdError } = await supabase
+                    .from('projects_legacy')
+                    .select(
+                        'id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code',
+                    )
+                    .in('project_id', projectIds);
 
-    if (projectsByProjectIdError) {
-        logSupabaseError('projects_legacy by project_id', projectsByProjectIdError);
-        throw projectsByProjectIdError;
-    }
+                if (projectsByProjectIdError) {
+                    logSupabaseError('projects_legacy by project_id', projectsByProjectIdError);
+                    throw projectsByProjectIdError;
+                }
 
-    ((data || []) as ProjectLegacyRow[]).forEach((p) => {
-        if (p.id) mergedProjectMap[p.id] = p;
-        if (p.project_id) mergedProjectMap[p.project_id] = p;
-    });
+                ((data || []) as ProjectLegacyRow[]).forEach((p) => {
+                    if (p.id) mergedProjectMap[p.id] = p;
+                    if (p.project_id) mergedProjectMap[p.project_id] = p;
+                });
 
-    console.log('[LegacyInvoiceBillingPage] projects by project_id count', data?.length);
-}
+                console.log('[LegacyInvoiceBillingPage] projects by project_id count', data?.length);
+            }
 
-setProjects(mergedProjectMap);
-
-            // -------------------------------------------------------------------
-            // customers
-            // primary:
-            // projects_legacy.customer_id -> customers.id
-            // fallback:
-            // invoices_legacy.customer_uuid -> customers.id
-            // -------------------------------------------------------------------
+            setProjects(mergedProjectMap);
 
             const customerIds = Array.from(
                 new Set(
@@ -917,12 +941,6 @@ setProjects(mergedProjectMap);
             console.log('[LegacyInvoiceBillingPage] requested customer ids count', customerIds.length);
             console.log('[LegacyInvoiceBillingPage] customers count', customersData.length);
 
-            // -------------------------------------------------------------------
-            // issue records
-            // legacy_invoice_id may contain invoice.row_uuid or invoice.invoice_id.
-            // So map both actual legacy_invoice_id and invoice_no.
-            // -------------------------------------------------------------------
-
             const { data: issueData, error: issueError } = await supabase
                 .from('invoice_issue_records')
                 .select('id, legacy_invoice_id, invoice_no, issue_status, issued_at, issue_count');
@@ -943,10 +961,6 @@ setProjects(mergedProjectMap);
 
                 console.log('[LegacyInvoiceBillingPage] issue records count', issueData?.length);
             }
-
-            // -------------------------------------------------------------------
-            // delivery records
-            // -------------------------------------------------------------------
 
             const { data: deliveryData, error: deliveryError } = await supabase
                 .from('invoice_delivery_records')
@@ -969,13 +983,11 @@ setProjects(mergedProjectMap);
                 console.log('[LegacyInvoiceBillingPage] delivery records count', deliveryData?.length);
             }
 
-            // -------------------------------------------------------------------
-            // payment matches
-            // -------------------------------------------------------------------
-
             const { data: paymentData, error: paymentError } = await supabase
                 .from('invoice_payment_matches')
-                .select('id, legacy_invoice_id, invoice_no, expected_amount, paid_amount, balance_amount, payment_status, payment_date');
+                .select(
+                    'id, legacy_invoice_id, invoice_no, expected_amount, paid_amount, balance_amount, payment_status, payment_date',
+                );
 
             if (paymentError) {
                 logSupabaseError('invoice_payment_matches', paymentError);
@@ -1038,25 +1050,25 @@ setProjects(mergedProjectMap);
     }, [activeTab, loadInvoiceData, loadSettings]);
 
     const combinedInvoices = useMemo<CombinedInvoice[]>(() => {
-    return invoices.map((invoice) => {
-        const project =
-            (invoice.project_uuid ? projects[invoice.project_uuid] : null) ||
-            (invoice.project_id ? projects[invoice.project_id] : null) ||
-            null;
+        return invoices.map((invoice) => {
+            const project =
+                (invoice.project_uuid ? projects[invoice.project_uuid] : null) ||
+                (invoice.project_id ? projects[invoice.project_id] : null) ||
+                null;
 
-        const customerId = project?.customer_id || invoice.customer_uuid || null;
-        const customer = customerId ? customers[customerId] || null : null;
+            const customerId = project?.customer_id || invoice.customer_uuid || null;
+            const customer = customerId ? customers[customerId] || null : null;
 
-        return {
-            invoice,
-            project,
-            customer,
-            issue: getRecordByInvoice(issues, invoice),
-            delivery: getRecordByInvoice(deliveries, invoice),
-            payment: getRecordByInvoice(payments, invoice),
-        };
-    });
-}, [invoices, projects, customers, issues, deliveries, payments]);
+            return {
+                invoice,
+                project,
+                customer,
+                issue: getRecordByInvoice(issues, invoice),
+                delivery: getRecordByInvoice(deliveries, invoice),
+                payment: getRecordByInvoice(payments, invoice),
+            };
+        });
+    }, [invoices, projects, customers, issues, deliveries, payments]);
 
     const filteredInvoices = useMemo(() => {
         let rows = combinedInvoices;
@@ -1118,6 +1130,63 @@ setProjects(mergedProjectMap);
                 (s.billing_email || '').toLowerCase().includes(q),
         );
     }, [settings, searchTerm]);
+
+    const handleMarkAsIssued = useCallback(
+        async (combined: CombinedInvoice) => {
+            const supabase = getSupabase();
+            const now = new Date().toISOString();
+
+            const { invoice, customer } = combined;
+
+            try {
+                if (combined.issue?.id) {
+                    const { error } = await supabase
+                        .from('invoice_issue_records')
+                        .update({
+                            issue_status: 'issued',
+                            issued_at: combined.issue.issued_at || now,
+                            last_issued_at: now,
+                            issue_count: (combined.issue.issue_count || 0) + 1,
+                            customer_code: customer?.customer_code || null,
+                            customer_name: customer?.customer_name || null,
+                            note: '手動で発行済みに登録',
+                        })
+                        .eq('id', combined.issue.id);
+
+                    if (error) {
+                        logSupabaseError('invoice_issue_records update issued', error);
+                        throw error;
+                    }
+                } else {
+                    const { error } = await supabase.from('invoice_issue_records').insert({
+                        legacy_invoice_id: invoice.row_uuid,
+                        invoice_no: invoice.invoice_id,
+                        customer_code: customer?.customer_code || null,
+                        customer_name: customer?.customer_name || null,
+                        issue_status: 'issued',
+                        issued_at: now,
+                        last_issued_at: now,
+                        issue_count: 1,
+                        note: '手動で発行済みに登録',
+                    });
+
+                    if (error) {
+                        logSupabaseError('invoice_issue_records insert issued', error);
+                        throw error;
+                    }
+                }
+
+                setSelected(null);
+                await loadInvoiceData();
+                setActiveTab('issued');
+            } catch (e) {
+                console.error('[LegacyInvoiceBillingPage] failed to mark invoice as issued', e);
+                setError(e instanceof Error ? e.message : '発行済み登録に失敗しました。');
+                throw e;
+            }
+        },
+        [loadInvoiceData],
+    );
 
     const handleRefresh = () => {
         if (activeTab === 'settings') {
@@ -1187,7 +1256,11 @@ setProjects(mergedProjectMap);
                     <input
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder={activeTab === 'settings' ? '顧客コード / 顧客名 / メールで検索...' : '請求番号 / 受注番号 / 顧客名 / 品名で検索...'}
+                        placeholder={
+                            activeTab === 'settings'
+                                ? '顧客コード / 顧客名 / メールで検索...'
+                                : '請求番号 / 受注番号 / 顧客名 / 品名で検索...'
+                        }
                         className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 pl-9 pr-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                 </div>
@@ -1199,9 +1272,7 @@ setProjects(mergedProjectMap);
                             {filteredInvoices.length}
                         </span>{' '}
                         / 取得件数:{' '}
-                        <span className="font-semibold text-slate-700 dark:text-slate-200">
-                            {invoices.length}
-                        </span>
+                        <span className="font-semibold text-slate-700 dark:text-slate-200">{invoices.length}</span>
                     </div>
                 )}
 
@@ -1259,10 +1330,10 @@ setProjects(mergedProjectMap);
                                             {s.delivery_method === 'email'
                                                 ? 'メール'
                                                 : s.delivery_method === 'post'
-                                                    ? '郵送'
-                                                    : s.delivery_method === 'manual'
-                                                        ? '手動'
-                                                        : s.delivery_method || '—'}
+                                                  ? '郵送'
+                                                  : s.delivery_method === 'manual'
+                                                    ? '手動'
+                                                    : s.delivery_method || '—'}
                                         </td>
                                         <td className="px-6 py-4">{s.billing_email || '—'}</td>
                                         <td className="px-6 py-4 text-center">
@@ -1336,9 +1407,7 @@ setProjects(mergedProjectMap);
                                         <td className="px-4 py-3 font-mono text-slate-900 dark:text-white">
                                             {row.invoice.invoice_id || '—'}
                                         </td>
-                                        <td className="px-4 py-3 font-mono">
-                                            {invoiceOrderCode(row)}
-                                        </td>
+                                        <td className="px-4 py-3 font-mono">{invoiceOrderCode(row)}</td>
                                         <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
                                             {row.customer?.customer_name || '—'}
                                         </td>
@@ -1378,7 +1447,13 @@ setProjects(mergedProjectMap);
                 </div>
             )}
 
-            {selected && <InvoiceDetailModal combined={selected} onClose={() => setSelected(null)} />}
+            {selected && (
+                <InvoiceDetailModal
+                    combined={selected}
+                    onClose={() => setSelected(null)}
+                    onMarkAsIssued={handleMarkAsIssued}
+                />
+            )}
 
             {editingSetting && (
                 <BillingSettingModal
