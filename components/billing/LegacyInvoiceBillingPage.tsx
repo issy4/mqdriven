@@ -33,7 +33,7 @@ interface CustomerRow {
 }
 
 interface ProjectLegacyRow {
-    row_uuid: string | null;
+    id: string;
     project_id: string | null;
     project_code: string | null;
     order_id: string | null;
@@ -805,66 +805,66 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             // -------------------------------------------------------------------
 
             const projectUuids = Array.from(
-                new Set(
-                    invoiceRows
-                        .map((invoice) => invoice.project_uuid)
-                        .filter((id): id is string => !!id),
-                ),
-            );
+    new Set(
+        invoiceRows
+            .map((invoice) => invoice.project_uuid)
+            .filter((id): id is string => !!id),
+    ),
+);
 
-            const projectIds = Array.from(
-                new Set(
-                    invoiceRows
-                        .map((invoice) => invoice.project_id)
-                        .filter((id): id is string => !!id),
-                ),
-            );
+const projectIds = Array.from(
+    new Set(
+        invoiceRows
+            .map((invoice) => invoice.project_id)
+            .filter((id): id is string => !!id),
+    ),
+);
 
-            const mergedProjectMap: Record<string, ProjectLegacyRow> = {};
+const mergedProjectMap: Record<string, ProjectLegacyRow> = {};
 
-            if (projectUuids.length > 0) {
-                const { data, error: projectsByUuidError } = await supabase
-                    .from('projects_legacy')
-                    .select(
-                        'row_uuid, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code',
-                    )
-                    .in('row_uuid', projectUuids);
+if (projectUuids.length > 0) {
+    const { data, error: projectsByUuidError } = await supabase
+        .from('projects_legacy')
+        .select(
+            'id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code',
+        )
+        .in('id', projectUuids);
 
-                if (projectsByUuidError) {
-                    logSupabaseError('projects_legacy by row_uuid', projectsByUuidError);
-                    throw projectsByUuidError;
-                }
+    if (projectsByUuidError) {
+        logSupabaseError('projects_legacy by id', projectsByUuidError);
+        throw projectsByUuidError;
+    }
 
-                ((data || []) as ProjectLegacyRow[]).forEach((p) => {
-                    if (p.row_uuid) mergedProjectMap[p.row_uuid] = p;
-                    if (p.project_id) mergedProjectMap[p.project_id] = p;
-                });
+    ((data || []) as ProjectLegacyRow[]).forEach((p) => {
+        if (p.id) mergedProjectMap[p.id] = p;
+        if (p.project_id) mergedProjectMap[p.project_id] = p;
+    });
 
-                console.log('[LegacyInvoiceBillingPage] projects by uuid count', data?.length);
-            }
+    console.log('[LegacyInvoiceBillingPage] projects by id count', data?.length);
+}
 
-            if (projectIds.length > 0) {
-                const { data, error: projectsByIdError } = await supabase
-                    .from('projects_legacy')
-                    .select(
-                        'row_uuid, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code',
-                    )
-                    .in('project_id', projectIds);
+if (projectIds.length > 0) {
+    const { data, error: projectsByProjectIdError } = await supabase
+        .from('projects_legacy')
+        .select(
+            'id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code',
+        )
+        .in('project_id', projectIds);
 
-                if (projectsByIdError) {
-                    logSupabaseError('projects_legacy by project_id', projectsByIdError);
-                    throw projectsByIdError;
-                }
+    if (projectsByProjectIdError) {
+        logSupabaseError('projects_legacy by project_id', projectsByProjectIdError);
+        throw projectsByProjectIdError;
+    }
 
-                ((data || []) as ProjectLegacyRow[]).forEach((p) => {
-                    if (p.row_uuid) mergedProjectMap[p.row_uuid] = p;
-                    if (p.project_id) mergedProjectMap[p.project_id] = p;
-                });
+    ((data || []) as ProjectLegacyRow[]).forEach((p) => {
+        if (p.id) mergedProjectMap[p.id] = p;
+        if (p.project_id) mergedProjectMap[p.project_id] = p;
+    });
 
-                console.log('[LegacyInvoiceBillingPage] projects by project_id count', data?.length);
-            }
+    console.log('[LegacyInvoiceBillingPage] projects by project_id count', data?.length);
+}
 
-            setProjects(mergedProjectMap);
+setProjects(mergedProjectMap);
 
             // -------------------------------------------------------------------
             // customers
@@ -1038,25 +1038,25 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     }, [activeTab, loadInvoiceData, loadSettings]);
 
     const combinedInvoices = useMemo<CombinedInvoice[]>(() => {
-        return invoices.map((invoice) => {
-            const project =
-                (invoice.project_uuid ? projects[invoice.project_uuid] : null) ||
-                (invoice.project_id ? projects[invoice.project_id] : null) ||
-                null;
+    return invoices.map((invoice) => {
+        const project =
+            (invoice.project_uuid ? projects[invoice.project_uuid] : null) ||
+            (invoice.project_id ? projects[invoice.project_id] : null) ||
+            null;
 
-            const customerId = project?.customer_id || invoice.customer_uuid || null;
-            const customer = customerId ? customers[customerId] || null : null;
+        const customerId = project?.customer_id || invoice.customer_uuid || null;
+        const customer = customerId ? customers[customerId] || null : null;
 
-            return {
-                invoice,
-                project,
-                customer,
-                issue: getRecordByInvoice(issues, invoice),
-                delivery: getRecordByInvoice(deliveries, invoice),
-                payment: getRecordByInvoice(payments, invoice),
-            };
-        });
-    }, [invoices, projects, customers, issues, deliveries, payments]);
+        return {
+            invoice,
+            project,
+            customer,
+            issue: getRecordByInvoice(issues, invoice),
+            delivery: getRecordByInvoice(deliveries, invoice),
+            payment: getRecordByInvoice(payments, invoice),
+        };
+    });
+}, [invoices, projects, customers, issues, deliveries, payments]);
 
     const filteredInvoices = useMemo(() => {
         let rows = combinedInvoices;
