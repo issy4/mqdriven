@@ -520,6 +520,17 @@ const InvoiceDetailModal: React.FC<{
 // Customer Billing Settings Modal
 // ---------------------------------------------------------------------------
 
+const DEFAULT_ATTACHMENT_NAME_TEMPLATE = '請求書_{{invoice_id}}_{{customer_name}}.pdf';
+
+const DEFAULT_EMAIL_SUBJECT_TEMPLATE = '【請求書送付】{{customer_name}} 御中 請求書のご送付';
+
+const DEFAULT_EMAIL_BODY_TEMPLATE = `{{customer_name}} 御中
+
+いつもお世話になっております。
+請求書を添付にてお送りいたします。
+
+ご確認のほど、よろしくお願いいたします。`;
+
 const emptySetting = (): Partial<BillingSettingRow> => ({
     customer_id: null,
     customer_code: '',
@@ -528,9 +539,9 @@ const emptySetting = (): Partial<BillingSettingRow> => ({
     billing_email: '',
     billing_cc: '',
     billing_bcc: '',
-    email_subject_template: '',
-    email_body_template: '',
-    attachment_name_template: '',
+    email_subject_template: DEFAULT_EMAIL_SUBJECT_TEMPLATE,
+    email_body_template: DEFAULT_EMAIL_BODY_TEMPLATE,
+    attachment_name_template: DEFAULT_ATTACHMENT_NAME_TEMPLATE,
     requires_manual_review: true,
     notes: '',
     is_active: true,
@@ -541,7 +552,16 @@ const BillingSettingModal: React.FC<{
     onClose: () => void;
     onSaved: () => void;
 }> = ({ setting, onClose, onSaved }) => {
-    const initialSetting = setting || emptySetting();
+    const initialSetting: Partial<BillingSettingRow> = {
+        ...emptySetting(),
+        ...(setting || {}),
+        attachment_name_template:
+            setting?.attachment_name_template || DEFAULT_ATTACHMENT_NAME_TEMPLATE,
+        email_subject_template:
+            setting?.email_subject_template || DEFAULT_EMAIL_SUBJECT_TEMPLATE,
+        email_body_template:
+            setting?.email_body_template || DEFAULT_EMAIL_BODY_TEMPLATE,
+    };
 
     const [form, setForm] = useState<Partial<BillingSettingRow>>(initialSetting);
     const [isSaving, setIsSaving] = useState(false);
