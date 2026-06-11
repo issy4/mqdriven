@@ -82,6 +82,11 @@ interface InvoiceDetailRow {
     tax_rate: string | null;
 }
 
+interface MasterLegacyRow {
+    legacy_id: string | null;
+    name: string | null;
+}
+
 interface IssueRecordRow {
     id: string;
     legacy_invoice_id: string | null;
@@ -157,9 +162,7 @@ type Tab = 'unissued' | 'issued' | 'pending_send' | 'sent' | 'paid' | 'settings'
 // ---------------------------------------------------------------------------
 
 const DEFAULT_ATTACHMENT_NAME_TEMPLATE = '請求書_{{invoice_id}}_{{customer_name}}.pdf';
-
 const DEFAULT_EMAIL_SUBJECT_TEMPLATE = '【請求書送付】{{customer_name}} 御中 請求書のご送付';
-
 const DEFAULT_EMAIL_BODY_TEMPLATE = `{{customer_name}} 御中
 
 いつもお世話になっております。
@@ -185,34 +188,20 @@ const JPY = (n: number | string | null | undefined) => {
 
 const numOf = (v: string | number | null | undefined): number => {
     if (v === null || v === undefined) return 0;
-
     const n = typeof v === 'string' ? Number(String(v).replace(/,/g, '')) : v;
-
     return Number.isNaN(n) ? 0 : n;
 };
 
 const formatDate = (v: string | null | undefined): string => {
     if (!v) return '—';
-
     const d = new Date(v);
-
-    if (Number.isNaN(d.getTime())) {
-        return v;
-    }
-
-    return d.toLocaleDateString('ja-JP');
+    return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString('ja-JP');
 };
 
 const formatDateTime = (v: string | null | undefined): string => {
     if (!v) return '—';
-
     const d = new Date(v);
-
-    if (Number.isNaN(d.getTime())) {
-        return v;
-    }
-
-    return d.toLocaleString('ja-JP');
+    return Number.isNaN(d.getTime()) ? v : d.toLocaleString('ja-JP');
 };
 
 const todayDateString = (): string => {
@@ -220,19 +209,12 @@ const todayDateString = (): string => {
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
-
     return `${yyyy}-${mm}-${dd}`;
 };
 
 const customerAddress = (c: CustomerRow | CustomerSearchResult | null): string => {
     if (!c) return '—';
-
-    const parts = [
-        c.post_no ? `〒${c.post_no}` : '',
-        c.address_1 || '',
-        c.address_2 || '',
-    ].filter(Boolean);
-
+    const parts = [c.post_no ? `〒${c.post_no}` : '', c.address_1 || '', c.address_2 || ''].filter(Boolean);
     return parts.length ? parts.join(' ') : '—';
 };
 
@@ -246,13 +228,7 @@ const logSupabaseError = (label: string, err: any) => {
 };
 
 const invoiceProductName = (row: CombinedInvoice): string => {
-    return (
-        row.project?.project_name ||
-        row.invoice.note ||
-        row.invoice.specification ||
-        row.invoice.pattern_name ||
-        '—'
-    );
+    return row.project?.project_name || row.invoice.note || row.invoice.specification || row.invoice.pattern_name || '—';
 };
 
 const invoiceOrderCode = (row: CombinedInvoice): string => {
@@ -268,11 +244,9 @@ const getRecordByInvoice = <T extends { legacy_invoice_id: string | null; invoic
     invoice: InvoiceLegacyRow,
 ): T | null => {
     const keys = [invoice.row_uuid, invoice.invoice_id].filter((v): v is string => !!v);
-
     for (const key of keys) {
         if (map[key]) return map[key];
     }
-
     return null;
 };
 
@@ -292,11 +266,9 @@ const renderTemplate = (template: string | null | undefined, row: CombinedInvoic
     };
 
     let result = template || '';
-
     Object.entries(values).forEach(([key, value]) => {
         result = result.replace(new RegExp(`{{\\s*${key}\\s*}}`, 'g'), value);
     });
-
     return result;
 };
 
@@ -309,23 +281,19 @@ const deliveryMethodLabel = (method: string | null | undefined): string => {
 
 const deliveryStatusLabel = (method: string | null | undefined, status: string | null | undefined): string => {
     if (!status) return '未送付';
-
     if (status === 'pending') {
         if (method === 'email') return 'メール送信待ち';
         if (method === 'post') return '郵送待ち';
         if (method === 'manual') return '手動対応待ち';
         return '送付待ち';
     }
-
     if (status === 'sent') {
         if (method === 'email') return 'メール送信済み';
         if (method === 'post') return '郵送済み';
         if (method === 'manual') return '手動対応済み';
         return '送付済み';
     }
-
     if (status === 'failed') return '送付失敗';
-
     return status;
 };
 
@@ -354,7 +322,6 @@ const StatusBadge: React.FC<{
 }> = ({ status, kind, method }) => {
     if (!status) {
         const fallback = kind === 'issue' ? '未発行' : kind === 'delivery' ? '未送付' : '未入金';
-
         return (
             <span className="px-2.5 py-0.5 text-xs font-medium rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
                 {fallback}
@@ -363,7 +330,6 @@ const StatusBadge: React.FC<{
     }
 
     const label = kind === 'delivery' ? deliveryStatusLabel(method, status) : STATUS_LABELS[status] || status;
-
     const tone =
         status === 'issued' || status === 'sent' || status === 'paid'
             ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
@@ -387,18 +353,11 @@ const InvoiceDetailModal: React.FC<{
     onMarkAsPendingDelivery: (combined: CombinedInvoice) => Promise<void>;
     onMarkAsDeliverySent: (combined: CombinedInvoice) => Promise<void>;
     onMarkAsPaid: (combined: CombinedInvoice) => Promise<void>;
-}> = ({
-    combined,
-    onClose,
-    onMarkAsIssued,
-    onMarkAsPendingDelivery,
-    onMarkAsDeliverySent,
-    onMarkAsPaid,
-}) => {
+}> = ({ combined, onClose, onMarkAsIssued, onMarkAsPendingDelivery, onMarkAsDeliverySent, onMarkAsPaid }) => {
     const { invoice, project, customer, delivery, payment } = combined;
     const [details, setDetails] = useState<InvoiceDetailRow[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
     const [masterMap, setMasterMap] = useState<Record<string, string>>({});
+    const [isLoading, setIsLoading] = useState(true);
     const [isMarkingIssued, setIsMarkingIssued] = useState(false);
     const [isMarkingPendingDelivery, setIsMarkingPendingDelivery] = useState(false);
     const [isMarkingDeliverySent, setIsMarkingDeliverySent] = useState(false);
@@ -415,15 +374,14 @@ const InvoiceDetailModal: React.FC<{
 
         const load = async () => {
             setIsLoading(true);
+            setMasterMap({});
 
             try {
                 const supabase = getSupabase();
 
                 const { data, error } = await supabase
                     .from('invoice_details_legacy')
-                    .select(
-                        'row_uuid, invoice_uuid, record_no, major_item, medium_item, detail, quantity, unit_price, tax_rate',
-                    )
+                    .select('row_uuid, invoice_uuid, record_no, major_item, medium_item, detail, quantity, unit_price, tax_rate')
                     .eq('invoice_uuid', invoice.row_uuid);
 
                 if (error) {
@@ -431,43 +389,41 @@ const InvoiceDetailModal: React.FC<{
                     throw error;
                 }
 
+                const sorted = ((data || []) as InvoiceDetailRow[])
+                    .slice()
+                    .sort((a, b) => numOf(a.record_no) - numOf(b.record_no));
+
                 if (!cancelled) {
-                    const sorted = ((data || []) as InvoiceDetailRow[])
-    .slice()
-    .sort((a, b) => numOf(a.record_no) - numOf(b.record_no));
+                    setDetails(sorted);
+                }
 
-setDetails(sorted);
+                const masterLegacyIds = Array.from(
+                    new Set(
+                        sorted
+                            .flatMap((d) => [d.major_item, d.medium_item])
+                            .filter((v): v is string => !!v),
+                    ),
+                );
 
-const masterLegacyIds = Array.from(
-    new Set(
-        sorted
-            .flatMap((d) => [d.major_item, d.medium_item])
-            .filter((v): v is string => !!v),
-    ),
-);
+                if (masterLegacyIds.length > 0) {
+                    const { data: masterData, error: masterError } = await supabase
+                        .from('master_legacy')
+                        .select('legacy_id, name')
+                        .in('legacy_id', masterLegacyIds);
 
-if (masterLegacyIds.length > 0) {
-    const { data: masterData, error: masterError } = await supabase
-        .from('master_legacy')
-        .select('legacy_id, name')
-        .in('legacy_id', masterLegacyIds);
-
-    if (masterError) {
-        logSupabaseError('master_legacy', masterError);
-    } else {
-        const nextMasterMap: Record<string, string> = {};
-
-        ((masterData || []) as { legacy_id: string | null; name: string | null }[]).forEach((m) => {
-            if (m.legacy_id) {
-                nextMasterMap[m.legacy_id] = m.name || m.legacy_id;
-            }
-        });
-
-        setMasterMap(nextMasterMap);
-    }
-} else {
-    setMasterMap({});
-}
+                    if (masterError) {
+                        logSupabaseError('master_legacy', masterError);
+                    } else if (!cancelled) {
+                        const nextMasterMap: Record<string, string> = {};
+                        ((masterData || []) as MasterLegacyRow[]).forEach((m) => {
+                            if (m.legacy_id) {
+                                nextMasterMap[String(m.legacy_id)] = m.name || String(m.legacy_id);
+                            }
+                        });
+                        setMasterMap(nextMasterMap);
+                    }
+                } else if (!cancelled) {
+                    setMasterMap({});
                 }
             } catch (e) {
                 console.error('[LegacyInvoiceBillingPage] failed to load invoice details', e);
@@ -483,15 +439,17 @@ if (masterLegacyIds.length > 0) {
         };
     }, [invoice.row_uuid]);
 
+    const masterName = (legacyId: string | null | undefined): string => {
+        if (!legacyId) return '—';
+        return masterMap[String(legacyId)] || String(legacyId);
+    };
+
     const handleMarkAsIssued = async () => {
         const ok = window.confirm(
             `請求番号 ${invoice.invoice_id || '—'} を「発行済み」として登録します。\n\nこの処理ではPDF生成やメール送信は行いません。よろしいですか？`,
         );
-
         if (!ok) return;
-
         setIsMarkingIssued(true);
-
         try {
             await onMarkAsIssued(combined);
         } finally {
@@ -503,11 +461,8 @@ if (masterLegacyIds.length > 0) {
         const ok = window.confirm(
             `請求番号 ${invoice.invoice_id || '—'} を「送付待ち」として登録します。\n\nこの処理では実際のメール送信・郵送処理は行いません。よろしいですか？`,
         );
-
         if (!ok) return;
-
         setIsMarkingPendingDelivery(true);
-
         try {
             await onMarkAsPendingDelivery(combined);
         } finally {
@@ -517,15 +472,11 @@ if (masterLegacyIds.length > 0) {
 
     const handleMarkAsDeliverySent = async () => {
         const label = deliveryDoneButtonLabel(delivery?.delivery_method);
-
         const ok = window.confirm(
             `請求番号 ${invoice.invoice_id || '—'} を「${label.replace('にする', '')}」として登録します。\n\nこの処理では実際のメール送信は行わず、送付済みステータスに更新します。よろしいですか？`,
         );
-
         if (!ok) return;
-
         setIsMarkingDeliverySent(true);
-
         try {
             await onMarkAsDeliverySent(combined);
         } finally {
@@ -537,11 +488,8 @@ if (masterLegacyIds.length > 0) {
         const ok = window.confirm(
             `請求番号 ${invoice.invoice_id || '—'} を「入金確認済み」として登録します。\n\n請求合計額 ${JPY(invoice.total)} を入金済みとして登録します。よろしいですか？`,
         );
-
         if (!ok) return;
-
         setIsMarkingPaid(true);
-
         try {
             await onMarkAsPaid(combined);
         } finally {
@@ -556,15 +504,9 @@ if (masterLegacyIds.length > 0) {
                     <div>
                         <h2 className="text-2xl font-bold text-slate-900 dark:text-white">請求書詳細</h2>
                         <p className="text-sm text-slate-500">請求番号: {invoice.invoice_id || '—'}</p>
-                        <p className="text-sm text-slate-500">
-                            受注番号: {project?.order_code || invoice.order_id || '—'}
-                        </p>
+                        <p className="text-sm text-slate-500">受注番号: {project?.order_code || invoice.order_id || '—'}</p>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                        aria-label="閉じる"
-                    >
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" aria-label="閉じる">
                         <X className="w-6 h-6" />
                     </button>
                 </div>
@@ -573,32 +515,21 @@ if (masterLegacyIds.length > 0) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                         <div>
                             <p className="text-sm font-medium text-slate-500">顧客名</p>
-                            <p className="font-semibold text-slate-900 dark:text-white">
-                                {customer?.customer_name || '—'}
-                            </p>
+                            <p className="font-semibold text-slate-900 dark:text-white">{customer?.customer_name || '—'}</p>
                             <p className="text-sm text-slate-500 mt-1">{customerAddress(customer)}</p>
                         </div>
                         <div className="sm:text-right">
                             <p className="text-sm font-medium text-slate-500">納品日</p>
-                            <p className="font-semibold text-slate-900 dark:text-white">
-                                {formatDate(invoice.delivery_date)}
-                            </p>
+                            <p className="font-semibold text-slate-900 dark:text-white">{formatDate(invoice.delivery_date)}</p>
                             <p className="text-sm text-slate-500 mt-1">
-                                締日: {customer?.closing_day || '—'} / 支払日:{' '}
-                                {customer?.pay_day || customer?.bill_payment_day || '—'}
+                                締日: {customer?.closing_day || '—'} / 支払日: {customer?.pay_day || customer?.bill_payment_day || '—'}
                             </p>
                         </div>
                     </div>
 
                     <div className="mb-4 text-sm whitespace-pre-wrap">
                         <span className="font-medium text-slate-500">品名: </span>
-                        <span className="text-slate-700 dark:text-slate-300">
-                            {project?.project_name ||
-                                invoice.note ||
-                                invoice.specification ||
-                                invoice.pattern_name ||
-                                '—'}
-                        </span>
+                        <span className="text-slate-700 dark:text-slate-300">{invoiceProductName(combined)}</span>
                     </div>
 
                     {invoice.specification && (
@@ -622,19 +553,13 @@ if (masterLegacyIds.length > 0) {
                                     <Send className="w-4 h-4 text-blue-600" />
                                     送付情報
                                 </h3>
-                                <StatusBadge
-                                    status={delivery.delivery_status}
-                                    kind="delivery"
-                                    method={delivery.delivery_method}
-                                />
+                                <StatusBadge status={delivery.delivery_status} kind="delivery" method={delivery.delivery_method} />
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                                 <div>
                                     <p className="text-xs font-medium text-slate-500">送付方法</p>
-                                    <p className="text-slate-900 dark:text-white">
-                                        {deliveryMethodLabel(delivery.delivery_method)}
-                                    </p>
+                                    <p className="text-slate-900 dark:text-white">{deliveryMethodLabel(delivery.delivery_method)}</p>
                                 </div>
                                 <div>
                                     <p className="text-xs font-medium text-slate-500">送付済み日時</p>
@@ -668,9 +593,7 @@ if (masterLegacyIds.length > 0) {
 
                                 <div className="sm:col-span-2">
                                     <p className="text-xs font-medium text-slate-500">添付ファイル名</p>
-                                    <p className="text-slate-900 dark:text-white">
-                                        {delivery.attachment_file_name || '—'}
-                                    </p>
+                                    <p className="text-slate-900 dark:text-white">{delivery.attachment_file_name || '—'}</p>
                                 </div>
                             </div>
                         </div>
@@ -753,27 +676,15 @@ if (masterLegacyIds.length > 0) {
                                 ) : (
                                     details.map((d) => {
                                         const amount = numOf(d.quantity) * numOf(d.unit_price);
-
                                         return (
-                                            <tr
-                                                key={d.row_uuid}
-                                                className="border-t border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300"
-                                            >
+                                            <tr key={d.row_uuid} className="border-t border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300">
                                                 <td className="px-3 py-2">{d.record_no || '—'}</td>
-                                                <td className="px-3 py-2">
-    {d.major_item ? masterMap[d.major_item] || d.major_item : '—'}
-</td>
-<td className="px-3 py-2">
-    {d.medium_item ? masterMap[d.medium_item] || d.medium_item : '—'}
-</td>
+                                                <td className="px-3 py-2">{masterName(d.major_item)}</td>
+                                                <td className="px-3 py-2">{masterName(d.medium_item)}</td>
                                                 <td className="px-3 py-2">{d.detail || '—'}</td>
-                                                <td className="px-3 py-2 text-right">
-                                                    {numOf(d.quantity).toLocaleString()}
-                                                </td>
+                                                <td className="px-3 py-2 text-right">{numOf(d.quantity).toLocaleString()}</td>
                                                 <td className="px-3 py-2 text-right">{JPY(d.unit_price)}</td>
-                                                <td className="px-3 py-2 text-right">
-                                                    {d.tax_rate ? `${d.tax_rate}%` : '—'}
-                                                </td>
+                                                <td className="px-3 py-2 text-right">{d.tax_rate ? `${d.tax_rate}%` : '—'}</td>
                                                 <td className="px-3 py-2 text-right font-medium">{JPY(amount)}</td>
                                             </tr>
                                         );
@@ -804,78 +715,39 @@ if (masterLegacyIds.length > 0) {
                 <div className="p-6 border-t border-slate-200 dark:border-slate-700 flex flex-wrap justify-end gap-3">
                     <div className="flex items-center gap-2 mr-auto">
                         <StatusBadge status={combined.issue?.issue_status} kind="issue" />
-                        <StatusBadge
-                            status={combined.delivery?.delivery_status}
-                            kind="delivery"
-                            method={combined.delivery?.delivery_method}
-                        />
+                        <StatusBadge status={combined.delivery?.delivery_status} kind="delivery" method={combined.delivery?.delivery_method} />
                         <StatusBadge status={combined.payment?.payment_status} kind="payment" />
                     </div>
 
                     {!isIssued && (
-                        <button
-                            onClick={handleMarkAsIssued}
-                            disabled={isMarkingIssued}
-                            className="flex items-center gap-2 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400"
-                        >
-                            {isMarkingIssued ? (
-                                <Loader className="w-5 h-5 animate-spin" />
-                            ) : (
-                                <CheckCircle className="w-5 h-5" />
-                            )}
+                        <button onClick={handleMarkAsIssued} disabled={isMarkingIssued} className="flex items-center gap-2 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400">
+                            {isMarkingIssued ? <Loader className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
                             発行済みとして登録
                         </button>
                     )}
 
                     {isIssued && !hasDelivery && (
-                        <button
-                            onClick={handleMarkAsPendingDelivery}
-                            disabled={isMarkingPendingDelivery}
-                            className="flex items-center gap-2 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-slate-400"
-                        >
-                            {isMarkingPendingDelivery ? (
-                                <Loader className="w-5 h-5 animate-spin" />
-                            ) : (
-                                <Send className="w-5 h-5" />
-                            )}
+                        <button onClick={handleMarkAsPendingDelivery} disabled={isMarkingPendingDelivery} className="flex items-center gap-2 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-slate-400">
+                            {isMarkingPendingDelivery ? <Loader className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                             送付待ちにする
                         </button>
                     )}
 
                     {isIssued && isPendingDelivery && (
-                        <button
-                            onClick={handleMarkAsDeliverySent}
-                            disabled={isMarkingDeliverySent}
-                            className="flex items-center gap-2 bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 disabled:bg-slate-400"
-                        >
-                            {isMarkingDeliverySent ? (
-                                <Loader className="w-5 h-5 animate-spin" />
-                            ) : (
-                                <CheckCircle className="w-5 h-5" />
-                            )}
+                        <button onClick={handleMarkAsDeliverySent} disabled={isMarkingDeliverySent} className="flex items-center gap-2 bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 disabled:bg-slate-400">
+                            {isMarkingDeliverySent ? <Loader className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
                             {deliveryDoneButtonLabel(delivery?.delivery_method)}
                         </button>
                     )}
 
                     {isIssued && isDeliverySent && !isPaid && (
-                        <button
-                            onClick={handleMarkAsPaid}
-                            disabled={isMarkingPaid}
-                            className="flex items-center gap-2 bg-emerald-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-emerald-700 disabled:bg-slate-400"
-                        >
-                            {isMarkingPaid ? (
-                                <Loader className="w-5 h-5 animate-spin" />
-                            ) : (
-                                <CheckCircle className="w-5 h-5" />
-                            )}
+                        <button onClick={handleMarkAsPaid} disabled={isMarkingPaid} className="flex items-center gap-2 bg-emerald-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-emerald-700 disabled:bg-slate-400">
+                            {isMarkingPaid ? <Loader className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
                             入金確認済みにする
                         </button>
                     )}
 
-                    <button
-                        onClick={onClose}
-                        className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600"
-                    >
+                    <button onClick={onClose} className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600">
                         閉じる
                     </button>
                 </div>
@@ -920,7 +792,6 @@ const BillingSettingModal: React.FC<{
     const [form, setForm] = useState<Partial<BillingSettingRow>>(initialSetting);
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
-
     const [customerSearchTerm, setCustomerSearchTerm] = useState(
         `${initialSetting.customer_code || ''} ${initialSetting.customer_name || ''}`.trim(),
     );
@@ -948,7 +819,6 @@ const BillingSettingModal: React.FC<{
 
     const searchCustomers = async () => {
         const q = customerSearchTerm.trim();
-
         if (!q) {
             setCustomerSearchResults([]);
             setError('顧客コードまたは顧客名を入力して検索してください。');
@@ -960,7 +830,6 @@ const BillingSettingModal: React.FC<{
 
         try {
             const supabase = getSupabase();
-
             const safeKeyword = q.replace(/[%_]/g, '');
             const { data, error } = await supabase
                 .from('customers')
@@ -975,7 +844,6 @@ const BillingSettingModal: React.FC<{
             }
 
             setCustomerSearchResults((data || []) as CustomerSearchResult[]);
-
             if (!data || data.length === 0) {
                 setError('該当する顧客が見つかりませんでした。');
             }
@@ -991,7 +859,6 @@ const BillingSettingModal: React.FC<{
         setSelectedCustomer(customer);
         setCustomerSearchResults([]);
         setCustomerSearchTerm(`${customer.customer_code || ''} ${customer.customer_name || ''}`.trim());
-
         setForm((prev) => ({
             ...prev,
             customer_id: customer.id,
@@ -1004,7 +871,6 @@ const BillingSettingModal: React.FC<{
         setSelectedCustomer(null);
         setCustomerSearchTerm('');
         setCustomerSearchResults([]);
-
         setForm((prev) => ({
             ...prev,
             customer_id: null,
@@ -1018,7 +884,6 @@ const BillingSettingModal: React.FC<{
             setError('顧客を検索して選択してください。');
             return;
         }
-
         if (!form.billing_email && form.delivery_method === 'email') {
             setError('送信方法がメールの場合は、請求先メールを入力してください。');
             return;
@@ -1029,7 +894,6 @@ const BillingSettingModal: React.FC<{
 
         try {
             const supabase = getSupabase();
-
             const payload = {
                 customer_id: form.customer_id ?? null,
                 customer_code: form.customer_code || null,
@@ -1047,18 +911,13 @@ const BillingSettingModal: React.FC<{
             };
 
             if (form.id) {
-                const { error } = await supabase
-                    .from('customer_billing_settings')
-                    .update(payload)
-                    .eq('id', form.id);
-
+                const { error } = await supabase.from('customer_billing_settings').update(payload).eq('id', form.id);
                 if (error) {
                     logSupabaseError('customer_billing_settings update', error);
                     throw error;
                 }
             } else {
                 const { error } = await supabase.from('customer_billing_settings').insert(payload);
-
                 if (error) {
                     logSupabaseError('customer_billing_settings insert', error);
                     throw error;
@@ -1081,11 +940,7 @@ const BillingSettingModal: React.FC<{
                     <h2 className="text-xl font-bold text-slate-900 dark:text-white">
                         {form.id ? '顧客別請求設定の編集' : '顧客別請求設定の新規登録'}
                     </h2>
-                    <button
-                        onClick={onClose}
-                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                        aria-label="閉じる"
-                    >
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" aria-label="閉じる">
                         <X className="w-6 h-6" />
                     </button>
                 </div>
@@ -1098,10 +953,7 @@ const BillingSettingModal: React.FC<{
                     )}
 
                     <div>
-                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                            顧客検索
-                        </label>
-
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">顧客検索</label>
                         <div className="flex gap-2">
                             <input
                                 className={inputClass}
@@ -1115,17 +967,8 @@ const BillingSettingModal: React.FC<{
                                 }}
                                 placeholder="顧客コードまたは顧客名で検索"
                             />
-                            <button
-                                type="button"
-                                onClick={searchCustomers}
-                                disabled={isSearchingCustomer}
-                                className="whitespace-nowrap flex items-center gap-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 disabled:bg-slate-300"
-                            >
-                                {isSearchingCustomer ? (
-                                    <Loader className="w-4 h-4 animate-spin" />
-                                ) : (
-                                    <Search className="w-4 h-4" />
-                                )}
+                            <button type="button" onClick={searchCustomers} disabled={isSearchingCustomer} className="whitespace-nowrap flex items-center gap-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 disabled:bg-slate-300">
+                                {isSearchingCustomer ? <Loader className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                                 検索
                             </button>
                         </div>
@@ -1133,12 +976,7 @@ const BillingSettingModal: React.FC<{
                         {customerSearchResults.length > 0 && (
                             <div className="mt-2 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
                                 {customerSearchResults.map((customer) => (
-                                    <button
-                                        type="button"
-                                        key={customer.id}
-                                        onClick={() => selectCustomer(customer)}
-                                        className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 border-b last:border-b-0 border-slate-100 dark:border-slate-700"
-                                    >
+                                    <button key={customer.id} type="button" onClick={() => selectCustomer(customer)} className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 border-b last:border-b-0 border-slate-100 dark:border-slate-700">
                                         <div className="font-semibold text-slate-900 dark:text-white">
                                             {customer.customer_code || '—'}　{customer.customer_name || '—'}
                                         </div>
@@ -1157,23 +995,14 @@ const BillingSettingModal: React.FC<{
                                             <p className="font-semibold text-slate-900 dark:text-white">
                                                 {form.customer_code || '—'}　{form.customer_name || '—'}
                                             </p>
-                                            {selectedCustomer && (
-                                                <p className="text-xs text-slate-500 mt-1">
-                                                    {customerAddress(selectedCustomer)}
-                                                </p>
-                                            )}
+                                            {selectedCustomer && <p className="text-xs text-slate-500 mt-1">{customerAddress(selectedCustomer)}</p>}
                                         </>
                                     ) : (
                                         <p className="text-sm text-slate-500">未選択</p>
                                     )}
                                 </div>
-
                                 {form.customer_id && (
-                                    <button
-                                        type="button"
-                                        onClick={clearCustomer}
-                                        className="text-xs text-red-600 hover:underline"
-                                    >
+                                    <button type="button" onClick={clearCustomer} className="text-xs text-red-600 hover:underline">
                                         選択解除
                                     </button>
                                 )}
@@ -1182,14 +1011,8 @@ const BillingSettingModal: React.FC<{
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                            送信方法
-                        </label>
-                        <select
-                            className={inputClass}
-                            value={form.delivery_method || 'email'}
-                            onChange={(e) => update('delivery_method', e.target.value)}
-                        >
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">送信方法</label>
+                        <select className={inputClass} value={form.delivery_method || 'email'} onChange={(e) => update('delivery_method', e.target.value)}>
                             <option value="email">メール</option>
                             <option value="post">郵送</option>
                             <option value="manual">手動</option>
@@ -1198,116 +1021,56 @@ const BillingSettingModal: React.FC<{
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                                請求先メール
-                            </label>
-                            <input
-                                className={inputClass}
-                                value={form.billing_email || ''}
-                                onChange={(e) => update('billing_email', e.target.value)}
-                                placeholder="billing@example.com"
-                            />
+                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">請求先メール</label>
+                            <input className={inputClass} value={form.billing_email || ''} onChange={(e) => update('billing_email', e.target.value)} placeholder="billing@example.com" />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                                CC
-                            </label>
-                            <input
-                                className={inputClass}
-                                value={form.billing_cc || ''}
-                                onChange={(e) => update('billing_cc', e.target.value)}
-                            />
+                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">CC</label>
+                            <input className={inputClass} value={form.billing_cc || ''} onChange={(e) => update('billing_cc', e.target.value)} />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                                BCC
-                            </label>
-                            <input
-                                className={inputClass}
-                                value={form.billing_bcc || ''}
-                                onChange={(e) => update('billing_bcc', e.target.value)}
-                            />
+                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">BCC</label>
+                            <input className={inputClass} value={form.billing_bcc || ''} onChange={(e) => update('billing_bcc', e.target.value)} />
                         </div>
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                            添付ファイル名テンプレート
-                        </label>
-                        <input
-                            className={inputClass}
-                            value={form.attachment_name_template || ''}
-                            onChange={(e) => update('attachment_name_template', e.target.value)}
-                            placeholder="例：請求書_{{invoice_id}}_{{customer_name}}.pdf"
-                        />
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">添付ファイル名テンプレート</label>
+                        <input className={inputClass} value={form.attachment_name_template || ''} onChange={(e) => update('attachment_name_template', e.target.value)} placeholder="例：請求書_{{invoice_id}}_{{customer_name}}.pdf" />
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                            メール件名テンプレート
-                        </label>
-                        <input
-                            className={inputClass}
-                            value={form.email_subject_template || ''}
-                            onChange={(e) => update('email_subject_template', e.target.value)}
-                            placeholder="例：【請求書送付】{{customer_name}} 御中 請求書のご送付"
-                        />
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">メール件名テンプレート</label>
+                        <input className={inputClass} value={form.email_subject_template || ''} onChange={(e) => update('email_subject_template', e.target.value)} placeholder="例：【請求書送付】{{customer_name}} 御中 請求書のご送付" />
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                            メール本文テンプレート
-                        </label>
-                        <textarea
-                            className={`${inputClass} min-h-[100px]`}
-                            value={form.email_body_template || ''}
-                            onChange={(e) => update('email_body_template', e.target.value)}
-                        />
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">メール本文テンプレート</label>
+                        <textarea className={`${inputClass} min-h-[100px]`} value={form.email_body_template || ''} onChange={(e) => update('email_body_template', e.target.value)} />
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                            備考
-                        </label>
-                        <textarea
-                            className={`${inputClass} min-h-[60px]`}
-                            value={form.notes || ''}
-                            onChange={(e) => update('notes', e.target.value)}
-                        />
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">備考</label>
+                        <textarea className={`${inputClass} min-h-[60px]`} value={form.notes || ''} onChange={(e) => update('notes', e.target.value)} />
                     </div>
 
                     <div className="flex items-center gap-6">
                         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-                            <input
-                                type="checkbox"
-                                checked={!!form.requires_manual_review}
-                                onChange={(e) => update('requires_manual_review', e.target.checked)}
-                            />
+                            <input type="checkbox" checked={!!form.requires_manual_review} onChange={(e) => update('requires_manual_review', e.target.checked)} />
                             手動確認が必要
                         </label>
                         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-                            <input
-                                type="checkbox"
-                                checked={form.is_active ?? true}
-                                onChange={(e) => update('is_active', e.target.checked)}
-                            />
+                            <input type="checkbox" checked={form.is_active ?? true} onChange={(e) => update('is_active', e.target.checked)} />
                             有効
                         </label>
                     </div>
                 </div>
 
                 <div className="p-6 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
-                    <button
-                        onClick={onClose}
-                        className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600"
-                    >
+                    <button onClick={onClose} className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600">
                         キャンセル
                     </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={isSaving}
-                        className="flex items-center gap-2 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-slate-400"
-                    >
+                    <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-slate-400">
                         {isSaving ? <Loader className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
                         保存
                     </button>
@@ -1335,14 +1098,12 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
-
     const [invoices, setInvoices] = useState<InvoiceLegacyRow[]>([]);
     const [projects, setProjects] = useState<Record<string, ProjectLegacyRow>>({});
     const [customers, setCustomers] = useState<Record<string, CustomerRow>>({});
     const [issues, setIssues] = useState<Record<string, IssueRecordRow>>({});
     const [deliveries, setDeliveries] = useState<Record<string, DeliveryRecordRow>>({});
     const [payments, setPayments] = useState<Record<string, PaymentMatchRow>>({});
-
     const [settings, setSettings] = useState<BillingSettingRow[]>([]);
     const [editingSetting, setEditingSetting] = useState<Partial<BillingSettingRow> | null>(null);
     const [selected, setSelected] = useState<CombinedInvoice | null>(null);
@@ -1353,12 +1114,9 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
         try {
             const supabase = getSupabase();
-
             const { data: invoicesData, error: invoicesError } = await supabase
                 .from('invoices_legacy')
-                .select(
-                    'row_uuid, invoice_id, order_id, project_id, project_uuid, customer_uuid, delivery_date, specification, subtotal, consumption, total, note, pattern_name, status, create_date',
-                )
+                .select('row_uuid, invoice_id, order_id, project_id, project_uuid, customer_uuid, delivery_date, specification, subtotal, consumption, total, note, pattern_name, status, create_date')
                 .order('create_date', { ascending: false })
                 .limit(500);
 
@@ -1367,33 +1125,17 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 throw invoicesError;
             }
 
-            const invoiceRows = ((invoicesData || []) as InvoiceLegacyRow[]);
+            const invoiceRows = (invoicesData || []) as InvoiceLegacyRow[];
             setInvoices(invoiceRows);
 
-            const projectUuids = Array.from(
-                new Set(
-                    invoiceRows
-                        .map((invoice) => invoice.project_uuid)
-                        .filter((id): id is string => !!id),
-                ),
-            );
-
-            const projectIds = Array.from(
-                new Set(
-                    invoiceRows
-                        .map((invoice) => invoice.project_id)
-                        .filter((id): id is string => !!id),
-                ),
-            );
-
+            const projectUuids = Array.from(new Set(invoiceRows.map((invoice) => invoice.project_uuid).filter((id): id is string => !!id)));
+            const projectIds = Array.from(new Set(invoiceRows.map((invoice) => invoice.project_id).filter((id): id is string => !!id)));
             const mergedProjectMap: Record<string, ProjectLegacyRow> = {};
 
             if (projectUuids.length > 0) {
                 const { data, error: projectsByUuidError } = await supabase
                     .from('projects_legacy')
-                    .select(
-                        'id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code',
-                    )
+                    .select('id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code')
                     .in('id', projectUuids);
 
                 if (projectsByUuidError) {
@@ -1410,9 +1152,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             if (projectIds.length > 0) {
                 const { data, error: projectsByProjectIdError } = await supabase
                     .from('projects_legacy')
-                    .select(
-                        'id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code',
-                    )
+                    .select('id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code')
                     .in('project_id', projectIds);
 
                 if (projectsByProjectIdError) {
@@ -1436,7 +1176,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                                 (invoice.project_uuid ? mergedProjectMap[invoice.project_uuid] : null) ||
                                 (invoice.project_id ? mergedProjectMap[invoice.project_id] : null) ||
                                 null;
-
                             return project?.customer_id || invoice.customer_uuid;
                         })
                         .filter((id): id is string => !!id),
@@ -1444,20 +1183,16 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             );
 
             let customersData: CustomerRow[] = [];
-
             if (customerIds.length > 0) {
                 const { data, error: customersError } = await supabase
                     .from('customers')
-                    .select(
-                        'id, customer_code, customer_name, post_no, address_1, address_2, closing_day, pay_day, bill_payment_day',
-                    )
+                    .select('id, customer_code, customer_name, post_no, address_1, address_2, closing_day, pay_day, bill_payment_day')
                     .in('id', customerIds);
 
                 if (customersError) {
                     logSupabaseError('customers', customersError);
                     throw customersError;
                 }
-
                 customersData = (data || []) as CustomerRow[];
             }
 
@@ -1465,7 +1200,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             customersData.forEach((c) => {
                 custMap[c.id] = c;
             });
-
             setCustomers(custMap);
 
             const { data: issueData, error: issueError } = await supabase
@@ -1477,52 +1211,42 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 setIssues({});
             } else {
                 const issueMap: Record<string, IssueRecordRow> = {};
-
                 ((issueData || []) as IssueRecordRow[]).forEach((r) => {
                     if (r.legacy_invoice_id) issueMap[r.legacy_invoice_id] = r;
                     if (r.invoice_no) issueMap[r.invoice_no] = r;
                 });
-
                 setIssues(issueMap);
             }
 
             const { data: deliveryData, error: deliveryError } = await supabase
                 .from('invoice_delivery_records')
-                .select(
-                    'id, legacy_invoice_id, invoice_no, issue_record_id, delivery_method, delivery_status, to_email, cc_email, bcc_email, subject, body, attachment_file_name, sent_at',
-                );
+                .select('id, legacy_invoice_id, invoice_no, issue_record_id, delivery_method, delivery_status, to_email, cc_email, bcc_email, subject, body, attachment_file_name, sent_at');
 
             if (deliveryError) {
                 logSupabaseError('invoice_delivery_records', deliveryError);
                 setDeliveries({});
             } else {
                 const deliveryMap: Record<string, DeliveryRecordRow> = {};
-
                 ((deliveryData || []) as DeliveryRecordRow[]).forEach((r) => {
                     if (r.legacy_invoice_id) deliveryMap[r.legacy_invoice_id] = r;
                     if (r.invoice_no) deliveryMap[r.invoice_no] = r;
                 });
-
                 setDeliveries(deliveryMap);
             }
 
             const { data: paymentData, error: paymentError } = await supabase
                 .from('invoice_payment_matches')
-                .select(
-                    'id, legacy_invoice_id, invoice_no, customer_code, customer_name, expected_amount, paid_amount, balance_amount, payment_status, payment_date, matched_at, payment_source, payment_reference, note',
-                );
+                .select('id, legacy_invoice_id, invoice_no, customer_code, customer_name, expected_amount, paid_amount, balance_amount, payment_status, payment_date, matched_at, payment_source, payment_reference, note');
 
             if (paymentError) {
                 logSupabaseError('invoice_payment_matches', paymentError);
                 setPayments({});
             } else {
                 const paymentMap: Record<string, PaymentMatchRow> = {};
-
                 ((paymentData || []) as PaymentMatchRow[]).forEach((r) => {
                     if (r.legacy_invoice_id) paymentMap[r.legacy_invoice_id] = r;
                     if (r.invoice_no) paymentMap[r.invoice_no] = r;
                 });
-
                 setPayments(paymentMap);
             }
         } catch (e) {
@@ -1539,19 +1263,15 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
         try {
             const supabase = getSupabase();
-
             const { data, error } = await supabase
                 .from('customer_billing_settings')
-                .select(
-                    'id, customer_id, customer_code, customer_name, delivery_method, billing_email, billing_cc, billing_bcc, email_subject_template, email_body_template, attachment_name_template, requires_manual_review, notes, is_active',
-                )
+                .select('id, customer_id, customer_code, customer_name, delivery_method, billing_email, billing_cc, billing_bcc, email_subject_template, email_body_template, attachment_name_template, requires_manual_review, notes, is_active')
                 .order('customer_code', { ascending: true });
 
             if (error) {
                 logSupabaseError('customer_billing_settings', error);
                 throw error;
             }
-
             setSettings((data || []) as BillingSettingRow[]);
         } catch (e) {
             console.error('[LegacyInvoiceBillingPage] failed to load billing settings', e);
@@ -1575,7 +1295,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 (invoice.project_uuid ? projects[invoice.project_uuid] : null) ||
                 (invoice.project_id ? projects[invoice.project_id] : null) ||
                 null;
-
             const customerId = project?.customer_id || invoice.customer_uuid || null;
             const customer = customerId ? customers[customerId] || null : null;
 
@@ -1594,39 +1313,25 @@ const LegacyInvoiceBillingPage: React.FC = () => {
         let rows = combinedInvoices;
 
         if (activeTab === 'unissued') {
-            rows = rows.filter((r) => {
-                return (
-                    !r.issue ||
-                    !r.issue.issue_status ||
-                    r.issue.issue_status === 'not_issued' ||
-                    r.issue.issue_status === 'draft'
-                );
-            });
+            rows = rows.filter((r) => !r.issue || !r.issue.issue_status || r.issue.issue_status === 'not_issued' || r.issue.issue_status === 'draft');
         } else if (activeTab === 'issued') {
             rows = rows.filter((r) => r.issue?.issue_status === 'issued');
         } else if (activeTab === 'pending_send') {
-            rows = rows.filter((r) => {
-                return r.issue?.issue_status === 'issued' && r.delivery?.delivery_status === 'pending';
-            });
+            rows = rows.filter((r) => r.issue?.issue_status === 'issued' && r.delivery?.delivery_status === 'pending');
         } else if (activeTab === 'sent') {
             rows = rows.filter((r) => r.delivery?.delivery_status === 'sent');
         } else if (activeTab === 'paid') {
-            rows = rows.filter(
-                (r) => r.payment?.payment_status === 'paid' || r.payment?.payment_status === 'partial',
-            );
+            rows = rows.filter((r) => r.payment?.payment_status === 'paid' || r.payment?.payment_status === 'partial');
         }
 
         if (searchTerm.trim()) {
             const q = searchTerm.trim().toLowerCase();
-
-            rows = rows.filter((r) => {
-                return (
-                    (r.invoice.invoice_id || '').toLowerCase().includes(q) ||
-                    invoiceOrderCode(r).toLowerCase().includes(q) ||
-                    invoiceCustomerName(r).toLowerCase().includes(q) ||
-                    invoiceProductName(r).toLowerCase().includes(q)
-                );
-            });
+            rows = rows.filter((r) =>
+                (r.invoice.invoice_id || '').toLowerCase().includes(q) ||
+                invoiceOrderCode(r).toLowerCase().includes(q) ||
+                invoiceCustomerName(r).toLowerCase().includes(q) ||
+                invoiceProductName(r).toLowerCase().includes(q),
+            );
         }
 
         return rows;
@@ -1634,9 +1339,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
     const filteredSettings = useMemo(() => {
         if (!searchTerm.trim()) return settings;
-
         const q = searchTerm.trim().toLowerCase();
-
         return settings.filter(
             (s) =>
                 (s.customer_code || '').toLowerCase().includes(q) ||
@@ -1648,7 +1351,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     const fetchBillingSettingForInvoice = async (combined: CombinedInvoice): Promise<BillingSettingRow | null> => {
         const supabase = getSupabase();
         const customer = combined.customer;
-
         if (!customer) return null;
 
         const baseSelect =
@@ -1661,12 +1363,10 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 .eq('is_active', true)
                 .eq('customer_id', customer.id)
                 .limit(1);
-
             if (error) {
                 logSupabaseError('customer_billing_settings by customer_id', error);
                 throw error;
             }
-
             if (data && data.length > 0) return data[0] as BillingSettingRow;
         }
 
@@ -1677,12 +1377,10 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 .eq('is_active', true)
                 .eq('customer_code', customer.customer_code)
                 .limit(1);
-
             if (error) {
                 logSupabaseError('customer_billing_settings by customer_code', error);
                 throw error;
             }
-
             if (data && data.length > 0) return data[0] as BillingSettingRow;
         }
 
@@ -1693,12 +1391,10 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 .eq('is_active', true)
                 .eq('customer_name', customer.customer_name)
                 .limit(1);
-
             if (error) {
                 logSupabaseError('customer_billing_settings by customer_name', error);
                 throw error;
             }
-
             if (data && data.length > 0) return data[0] as BillingSettingRow;
         }
 
@@ -1709,7 +1405,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
         async (combined: CombinedInvoice) => {
             const supabase = getSupabase();
             const now = new Date().toISOString();
-
             const { invoice, customer } = combined;
 
             try {
@@ -1726,7 +1421,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                             note: '手動で発行済みに登録',
                         })
                         .eq('id', combined.issue.id);
-
                     if (error) {
                         logSupabaseError('invoice_issue_records update issued', error);
                         throw error;
@@ -1743,7 +1437,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                         issue_count: 1,
                         note: '手動で発行済みに登録',
                     });
-
                     if (error) {
                         logSupabaseError('invoice_issue_records insert issued', error);
                         throw error;
@@ -1772,26 +1465,18 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 }
 
                 const setting = await fetchBillingSettingForInvoice(combined);
-
                 if (!setting) {
                     throw new Error('この顧客の有効な顧客別設定が見つかりません。先に顧客別設定を登録してください。');
                 }
 
                 const method = setting.delivery_method || 'email';
-
                 if (method === 'email' && !setting.billing_email) {
                     throw new Error('送信方法がメールですが、請求先メールが設定されていません。');
                 }
 
                 const subjectTemplate = setting.email_subject_template || DEFAULT_EMAIL_SUBJECT_TEMPLATE;
                 const bodyTemplate = setting.email_body_template || DEFAULT_EMAIL_BODY_TEMPLATE;
-                const attachmentNameTemplate =
-                    setting.attachment_name_template || DEFAULT_ATTACHMENT_NAME_TEMPLATE;
-
-                const subject = method === 'email' ? renderTemplate(subjectTemplate, combined) : null;
-                const body = method === 'email' ? renderTemplate(bodyTemplate, combined) : null;
-                const attachmentFileName = renderTemplate(attachmentNameTemplate, combined);
-
+                const attachmentNameTemplate = setting.attachment_name_template || DEFAULT_ATTACHMENT_NAME_TEMPLATE;
                 const payload = {
                     legacy_invoice_id: combined.invoice.row_uuid,
                     invoice_no: combined.invoice.invoice_id,
@@ -1801,26 +1486,21 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                     to_email: method === 'email' ? setting.billing_email : null,
                     cc_email: method === 'email' ? setting.billing_cc : null,
                     bcc_email: method === 'email' ? setting.billing_bcc : null,
-                    subject,
-                    body,
-                    attachment_file_name: attachmentFileName,
+                    subject: method === 'email' ? renderTemplate(subjectTemplate, combined) : null,
+                    body: method === 'email' ? renderTemplate(bodyTemplate, combined) : null,
+                    attachment_file_name: renderTemplate(attachmentNameTemplate, combined),
                     error_message: null,
                     sent_at: null,
                 };
 
                 if (combined.delivery?.id) {
-                    const { error } = await supabase
-                        .from('invoice_delivery_records')
-                        .update(payload)
-                        .eq('id', combined.delivery.id);
-
+                    const { error } = await supabase.from('invoice_delivery_records').update(payload).eq('id', combined.delivery.id);
                     if (error) {
                         logSupabaseError('invoice_delivery_records update pending', error);
                         throw error;
                     }
                 } else {
                     const { error } = await supabase.from('invoice_delivery_records').insert(payload);
-
                     if (error) {
                         logSupabaseError('invoice_delivery_records insert pending', error);
                         throw error;
@@ -1849,14 +1529,9 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 }
 
                 const now = new Date().toISOString();
-
                 const { error } = await supabase
                     .from('invoice_delivery_records')
-                    .update({
-                        delivery_status: 'sent',
-                        sent_at: now,
-                        error_message: null,
-                    })
+                    .update({ delivery_status: 'sent', sent_at: now, error_message: null })
                     .eq('id', combined.delivery.id);
 
                 if (error) {
@@ -1888,7 +1563,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 const now = new Date().toISOString();
                 const paymentDate = todayDateString();
                 const total = numOf(combined.invoice.total);
-
                 const payload = {
                     legacy_invoice_id: combined.invoice.row_uuid,
                     invoice_no: combined.invoice.invoice_id,
@@ -1906,18 +1580,13 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 };
 
                 if (combined.payment?.id) {
-                    const { error } = await supabase
-                        .from('invoice_payment_matches')
-                        .update(payload)
-                        .eq('id', combined.payment.id);
-
+                    const { error } = await supabase.from('invoice_payment_matches').update(payload).eq('id', combined.payment.id);
                     if (error) {
                         logSupabaseError('invoice_payment_matches update paid', error);
                         throw error;
                     }
                 } else {
                     const { error } = await supabase.from('invoice_payment_matches').insert(payload);
-
                     if (error) {
                         logSupabaseError('invoice_payment_matches insert paid', error);
                         throw error;
@@ -1953,18 +1622,11 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                             <FileText className="w-6 h-6" />
                         </div>
                         <div>
-                            <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-                                請求書発行・送信管理（基幹連携）
-                            </h1>
-                            <p className="text-sm text-slate-500">
-                                基幹SQL Serverから同期された請求データを元にした BtoB 請求管理
-                            </p>
+                            <h1 className="text-xl font-bold text-slate-900 dark:text-white">請求書発行・送信管理（基幹連携）</h1>
+                            <p className="text-sm text-slate-500">基幹SQL Serverから同期された請求データを元にした BtoB 請求管理</p>
                         </div>
                     </div>
-                    <button
-                        onClick={handleRefresh}
-                        className="flex items-center gap-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium py-2 px-3 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600"
-                    >
+                    <button onClick={handleRefresh} className="flex items-center gap-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium py-2 px-3 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600">
                         <RefreshCw className="w-4 h-4" />
                         再読込
                     </button>
@@ -1976,7 +1638,6 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                     {TABS.map((tab) => {
                         const Icon = tab.icon;
                         const isActive = activeTab === tab.id;
-
                         return (
                             <button
                                 key={tab.id}
@@ -2004,42 +1665,27 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                     <input
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder={
-                            activeTab === 'settings'
-                                ? '顧客コード / 顧客名 / メールで検索...'
-                                : '請求番号 / 受注番号 / 顧客名 / 品名で検索...'
-                        }
+                        placeholder={activeTab === 'settings' ? '顧客コード / 顧客名 / メールで検索...' : '請求番号 / 受注番号 / 顧客名 / 品名で検索...'}
                         className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 pl-9 pr-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                 </div>
 
                 {activeTab !== 'settings' && (
                     <div className="text-sm text-slate-500">
-                        表示件数:{' '}
-                        <span className="font-semibold text-slate-700 dark:text-slate-200">
-                            {filteredInvoices.length}
-                        </span>{' '}
-                        / 取得件数:{' '}
+                        表示件数: <span className="font-semibold text-slate-700 dark:text-slate-200">{filteredInvoices.length}</span> / 取得件数:{' '}
                         <span className="font-semibold text-slate-700 dark:text-slate-200">{invoices.length}</span>
                     </div>
                 )}
 
                 {activeTab === 'settings' && (
-                    <button
-                        onClick={() => setEditingSetting(emptySetting())}
-                        className="flex items-center gap-2 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700"
-                    >
+                    <button onClick={() => setEditingSetting(emptySetting())} className="flex items-center gap-2 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">
                         <Plus className="w-5 h-5" />
                         新規登録
                     </button>
                 )}
             </div>
 
-            {error && (
-                <div className="m-4 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-4 py-3 text-sm">
-                    {error}
-                </div>
-            )}
+            {error && <div className="m-4 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-4 py-3 text-sm">{error}</div>}
 
             {activeTab === 'settings' ? (
                 <div className="overflow-x-auto">
@@ -2064,37 +1710,19 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                                 </tr>
                             ) : (
                                 filteredSettings.map((s) => (
-                                    <tr
-                                        key={s.id}
-                                        className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50/50 dark:hover:bg-slate-700/30"
-                                    >
-                                        <td className="px-6 py-4 font-mono text-slate-900 dark:text-white">
-                                            {s.customer_code || '—'}
-                                        </td>
-                                        <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">
-                                            {s.customer_name || '—'}
-                                        </td>
+                                    <tr key={s.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50/50 dark:hover:bg-slate-700/30">
+                                        <td className="px-6 py-4 font-mono text-slate-900 dark:text-white">{s.customer_code || '—'}</td>
+                                        <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{s.customer_name || '—'}</td>
                                         <td className="px-6 py-4">{deliveryMethodLabel(s.delivery_method)}</td>
                                         <td className="px-6 py-4">{s.billing_email || '—'}</td>
+                                        <td className="px-6 py-4 text-center">{s.requires_manual_review ? '要' : '—'}</td>
                                         <td className="px-6 py-4 text-center">
-                                            {s.requires_manual_review ? '要' : '—'}
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <span
-                                                className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${
-                                                    s.is_active
-                                                        ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
-                                                        : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                                                }`}
-                                            >
+                                            <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${s.is_active ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
                                                 {s.is_active ? '有効' : '無効'}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <button
-                                                onClick={() => setEditingSetting(s)}
-                                                className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
-                                            >
+                                            <button onClick={() => setEditingSetting(s)} className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline">
                                                 <Edit className="w-4 h-4" />
                                                 編集
                                             </button>
@@ -2139,43 +1767,20 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                                 </tr>
                             ) : (
                                 filteredInvoices.map((row) => (
-                                    <tr
-                                        key={row.invoice.row_uuid}
-                                        onClick={() => setSelected(row)}
-                                        className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 cursor-pointer"
-                                    >
-                                        <td className="px-4 py-3 font-mono text-slate-900 dark:text-white">
-                                            {row.invoice.invoice_id || '—'}
-                                        </td>
+                                    <tr key={row.invoice.row_uuid} onClick={() => setSelected(row)} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 cursor-pointer">
+                                        <td className="px-4 py-3 font-mono text-slate-900 dark:text-white">{row.invoice.invoice_id || '—'}</td>
                                         <td className="px-4 py-3 font-mono">{invoiceOrderCode(row)}</td>
-                                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
-                                            {row.customer?.customer_name || '—'}
-                                        </td>
-                                        <td
-                                            className="px-4 py-3 max-w-[320px] truncate"
-                                            title={invoiceProductName(row)}
-                                        >
+                                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">{row.customer?.customer_name || '—'}</td>
+                                        <td className="px-4 py-3 max-w-[320px] truncate" title={invoiceProductName(row)}>
                                             {invoiceProductName(row)}
                                         </td>
                                         <td className="px-4 py-3">{formatDate(row.invoice.delivery_date)}</td>
                                         <td className="px-4 py-3 text-right">{JPY(row.invoice.subtotal)}</td>
                                         <td className="px-4 py-3 text-right">{JPY(row.invoice.consumption)}</td>
-                                        <td className="px-4 py-3 text-right font-semibold text-slate-900 dark:text-white">
-                                            {JPY(row.invoice.total)}
-                                        </td>
-                                        <td className="px-4 py-3 text-center">
-                                            <StatusBadge status={row.issue?.issue_status} kind="issue" />
-                                        </td>
-                                        <td className="px-4 py-3 text-center">
-                                            <StatusBadge
-                                                status={row.delivery?.delivery_status}
-                                                kind="delivery"
-                                                method={row.delivery?.delivery_method}
-                                            />
-                                        </td>
-                                        <td className="px-4 py-3 text-center">
-                                            <StatusBadge status={row.payment?.payment_status} kind="payment" />
-                                        </td>
+                                        <td className="px-4 py-3 text-right font-semibold text-slate-900 dark:text-white">{JPY(row.invoice.total)}</td>
+                                        <td className="px-4 py-3 text-center"><StatusBadge status={row.issue?.issue_status} kind="issue" /></td>
+                                        <td className="px-4 py-3 text-center"><StatusBadge status={row.delivery?.delivery_status} kind="delivery" method={row.delivery?.delivery_method} /></td>
+                                        <td className="px-4 py-3 text-center"><StatusBadge status={row.payment?.payment_status} kind="payment" /></td>
                                     </tr>
                                 ))
                             )}
