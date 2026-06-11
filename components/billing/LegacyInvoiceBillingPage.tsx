@@ -208,7 +208,15 @@ const InvoiceDetailModal: React.FC<{
                         'row_uuid, invoice_uuid, record_no, major_item, medium_item, detail, quantity, unit_price, tax_rate',
                     )
                     .eq('invoice_uuid', invoice.row_uuid);
-                if (error) throw error;
+                if (error) {
+                    console.error('[v0] invoice_details_legacy Supabase error', {
+                        message: error.message,
+                        details: (error as any).details,
+                        hint: (error as any).hint,
+                        code: (error as any).code,
+                    });
+                    throw error;
+                }
                 if (!cancelled) {
                     const sorted = (data || []).slice().sort((a, b) => numOf(a.record_no) - numOf(b.record_no));
                     setDetails(sorted);
@@ -640,11 +648,20 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                     .select('id, legacy_invoice_id, expected_amount, paid_amount, balance_amount, payment_status, payment_date'),
             ]);
 
-            if (invRes.error) throw invRes.error;
-            if (custRes.error) throw custRes.error;
-            if (issueRes.error) throw issueRes.error;
-            if (delRes.error) throw delRes.error;
-            if (payRes.error) throw payRes.error;
+            const logSupabaseError = (label: string, err: any) => {
+                console.error(`[v0] ${label} Supabase error`, {
+                    message: err?.message,
+                    details: err?.details,
+                    hint: err?.hint,
+                    code: err?.code,
+                });
+            };
+
+            if (invRes.error) { logSupabaseError('invoices_legacy', invRes.error); throw invRes.error; }
+            if (custRes.error) { logSupabaseError('customers', custRes.error); throw custRes.error; }
+            if (issueRes.error) { logSupabaseError('invoice_issue_records', issueRes.error); throw issueRes.error; }
+            if (delRes.error) { logSupabaseError('invoice_delivery_records', delRes.error); throw delRes.error; }
+            if (payRes.error) { logSupabaseError('invoice_payment_matches', payRes.error); throw payRes.error; }
 
             setInvoices((invRes.data as InvoiceLegacyRow[]) || []);
 
@@ -710,7 +727,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
     const combinedInvoices = useMemo<CombinedInvoice[]>(() => {
         return invoices.map((invoice) => {
-            const key = invoice.invoice_id || '';
+            const key = invoice.row_uuid || '';
             return {
                 invoice,
                 customer: invoice.customer_uuid ? customers[invoice.customer_uuid] || null : null,
