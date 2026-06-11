@@ -197,6 +197,18 @@ const formatDate = (v: string | null | undefined): string => {
     return d.toLocaleDateString('ja-JP');
 };
 
+const formatDateTime = (v: string | null | undefined): string => {
+    if (!v) return '—';
+
+    const d = new Date(v);
+
+    if (Number.isNaN(d.getTime())) {
+        return v;
+    }
+
+    return d.toLocaleString('ja-JP');
+};
+
 const customerAddress = (c: CustomerRow | CustomerSearchResult | null): string => {
     if (!c) return '—';
 
@@ -302,6 +314,12 @@ const deliveryStatusLabel = (method: string | null | undefined, status: string |
     return status;
 };
 
+const deliveryDoneButtonLabel = (method: string | null | undefined): string => {
+    if (method === 'post') return '郵送済みにする';
+    if (method === 'manual') return '手動対応済みにする';
+    return 'メール送信済みにする';
+};
+
 const STATUS_LABELS: Record<string, string> = {
     not_issued: '未発行',
     draft: '下書き',
@@ -352,15 +370,18 @@ const InvoiceDetailModal: React.FC<{
     onClose: () => void;
     onMarkAsIssued: (combined: CombinedInvoice) => Promise<void>;
     onMarkAsPendingDelivery: (combined: CombinedInvoice) => Promise<void>;
-}> = ({ combined, onClose, onMarkAsIssued, onMarkAsPendingDelivery }) => {
-    const { invoice, project, customer } = combined;
+    onMarkAsDeliverySent: (combined: CombinedInvoice) => Promise<void>;
+}> = ({ combined, onClose, onMarkAsIssued, onMarkAsPendingDelivery, onMarkAsDeliverySent }) => {
+    const { invoice, project, customer, delivery } = combined;
     const [details, setDetails] = useState<InvoiceDetailRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isMarkingIssued, setIsMarkingIssued] = useState(false);
     const [isMarkingPendingDelivery, setIsMarkingPendingDelivery] = useState(false);
+    const [isMarkingDeliverySent, setIsMarkingDeliverySent] = useState(false);
 
     const isIssued = combined.issue?.issue_status === 'issued';
     const hasDelivery = !!combined.delivery;
+    const isPendingDelivery = delivery?.delivery_status === 'pending';
 
     useEffect(() => {
         let cancelled = false;
@@ -436,6 +457,24 @@ const InvoiceDetailModal: React.FC<{
         }
     };
 
+    const handleMarkAsDeliverySent = async () => {
+        const label = deliveryDoneButtonLabel(delivery?.delivery_method);
+
+        const ok = window.confirm(
+            `請求番号 ${invoice.invoice_id || '—'} を「${label.replace('にする', '')}」として登録します。\n\nこの処理では実際のメール送信は行わず、送付済みステータスに更新します。よろしいですか？`,
+        );
+
+        if (!ok) return;
+
+        setIsMarkingDeliverySent(true);
+
+        try {
+            await onMarkAsDeliverySent(combined);
+        } finally {
+            setIsMarkingDeliverySent(false);
+        }
+    };
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
@@ -499,6 +538,67 @@ const InvoiceDetailModal: React.FC<{
                         <div className="mb-4 text-sm whitespace-pre-wrap">
                             <span className="font-medium text-slate-500">備考: </span>
                             <span className="text-slate-700 dark:text-slate-300">{invoice.note}</span>
+                        </div>
+                    )}
+
+                    {delivery && (
+                        <div className="mb-6 rounded-xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/60 dark:bg-blue-950/20 p-4">
+                            <div className="flex items-center justify-between gap-3 mb-3">
+                                <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <Send className="w-4 h-4 text-blue-600" />
+                                    送付情報
+                                </h3>
+                                <StatusBadge
+                                    status={delivery.delivery_status}
+                                    kind="delivery"
+                                    method={delivery.delivery_method}
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                <div>
+                                    <p className="text-xs font-medium text-slate-500">送付方法</p>
+                                    <p className="text-slate-900 dark:text-white">
+                                        {deliveryMethodLabel(delivery.delivery_method)}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-medium text-slate-500">送付済み日時</p>
+                                    <p className="text-slate-900 dark:text-white">{formatDateTime(delivery.sent_at)}</p>
+                                </div>
+
+                                {delivery.delivery_method === 'email' && (
+                                    <>
+                                        <div>
+                                            <p className="text-xs font-medium text-slate-500">宛先</p>
+                                            <p className="text-slate-900 dark:text-white">{delivery.to_email || '—'}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-medium text-slate-500">CC / BCC</p>
+                                            <p className="text-slate-900 dark:text-white">
+                                                CC: {delivery.cc_email || '—'} / BCC: {delivery.bcc_email || '—'}
+                                            </p>
+                                        </div>
+                                        <div className="sm:col-span-2">
+                                            <p className="text-xs font-medium text-slate-500">件名</p>
+                                            <p className="text-slate-900 dark:text-white">{delivery.subject || '—'}</p>
+                                        </div>
+                                        <div className="sm:col-span-2">
+                                            <p className="text-xs font-medium text-slate-500">本文</p>
+                                            <pre className="mt-1 whitespace-pre-wrap rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 text-slate-700 dark:text-slate-300 text-xs leading-relaxed">
+                                                {delivery.body || '—'}
+                                            </pre>
+                                        </div>
+                                    </>
+                                )}
+
+                                <div className="sm:col-span-2">
+                                    <p className="text-xs font-medium text-slate-500">添付ファイル名</p>
+                                    <p className="text-slate-900 dark:text-white">
+                                        {delivery.attachment_file_name || '—'}
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -614,6 +714,21 @@ const InvoiceDetailModal: React.FC<{
                                 <Send className="w-5 h-5" />
                             )}
                             送付待ちにする
+                        </button>
+                    )}
+
+                    {isIssued && isPendingDelivery && (
+                        <button
+                            onClick={handleMarkAsDeliverySent}
+                            disabled={isMarkingDeliverySent}
+                            className="flex items-center gap-2 bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 disabled:bg-slate-400"
+                        >
+                            {isMarkingDeliverySent ? (
+                                <Loader className="w-5 h-5 animate-spin" />
+                            ) : (
+                                <CheckCircle className="w-5 h-5" />
+                            )}
+                            {deliveryDoneButtonLabel(delivery?.delivery_method)}
                         </button>
                     )}
 
@@ -1351,10 +1466,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             rows = rows.filter((r) => r.issue?.issue_status === 'issued');
         } else if (activeTab === 'pending_send') {
             rows = rows.filter((r) => {
-                return (
-                    r.issue?.issue_status === 'issued' &&
-                    r.delivery?.delivery_status === 'pending'
-                );
+                return r.issue?.issue_status === 'issued' && r.delivery?.delivery_status === 'pending';
             });
         } else if (activeTab === 'sent') {
             rows = rows.filter((r) => r.delivery?.delivery_status === 'sent');
@@ -1553,6 +1665,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                     body,
                     attachment_file_name: attachmentFileName,
                     error_message: null,
+                    sent_at: null,
                 };
 
                 if (combined.delivery?.id) {
@@ -1580,6 +1693,43 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             } catch (e) {
                 console.error('[LegacyInvoiceBillingPage] failed to mark invoice as pending delivery', e);
                 setError(e instanceof Error ? e.message : '送付待ち登録に失敗しました。');
+                throw e;
+            }
+        },
+        [loadInvoiceData],
+    );
+
+    const handleMarkAsDeliverySent = useCallback(
+        async (combined: CombinedInvoice) => {
+            const supabase = getSupabase();
+
+            try {
+                if (!combined.delivery?.id) {
+                    throw new Error('送付待ちレコードが見つかりません。');
+                }
+
+                const now = new Date().toISOString();
+
+                const { error } = await supabase
+                    .from('invoice_delivery_records')
+                    .update({
+                        delivery_status: 'sent',
+                        sent_at: now,
+                        error_message: null,
+                    })
+                    .eq('id', combined.delivery.id);
+
+                if (error) {
+                    logSupabaseError('invoice_delivery_records update sent', error);
+                    throw error;
+                }
+
+                setSelected(null);
+                await loadInvoiceData();
+                setActiveTab('sent');
+            } catch (e) {
+                console.error('[LegacyInvoiceBillingPage] failed to mark delivery as sent', e);
+                setError(e instanceof Error ? e.message : '送付済み登録に失敗しました。');
                 throw e;
             }
         },
@@ -1847,6 +1997,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                     onClose={() => setSelected(null)}
                     onMarkAsIssued={handleMarkAsIssued}
                     onMarkAsPendingDelivery={handleMarkAsPendingDelivery}
+                    onMarkAsDeliverySent={handleMarkAsDeliverySent}
                 />
             )}
 
