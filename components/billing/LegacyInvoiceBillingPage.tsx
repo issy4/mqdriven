@@ -50,6 +50,14 @@ interface ProjectLegacyRow {
     project_name: string | null;
     customer_id: string | null;
     customer_code: string | null;
+    sales_user_id: string | null;
+    sales_user_code: string | null;
+}
+
+interface UserRow {
+    id: string;
+    user_code: string | null;
+    name: string | null;
 }
 
 interface InvoiceLegacyRow {
@@ -84,7 +92,8 @@ interface InvoiceDetailRow {
 
 interface MasterLegacyRow {
     legacy_id: string | null;
-    name: string | null;
+    key_name: string | null;
+    value: string | null;
 }
 
 interface IssueRecordRow {
@@ -150,6 +159,7 @@ interface CombinedInvoice {
     invoice: InvoiceLegacyRow;
     project: ProjectLegacyRow | null;
     customer: CustomerRow | null;
+    salesUser: UserRow | null;
     issue: IssueRecordRow | null;
     delivery: DeliveryRecordRow | null;
     payment: PaymentMatchRow | null;
@@ -210,6 +220,29 @@ const todayDateString = (): string => {
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
+};
+
+
+const formatJapaneseDateForInvoice = (v: string | null | undefined): string => {
+    const d = v ? new Date(v) : new Date();
+    if (Number.isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}年 ${d.getMonth() + 1}月 ${d.getDate()}日`;
+};
+
+const formatJapaneseMonthDay = (v: string | null | undefined): string => {
+    const d = v ? new Date(v) : new Date();
+    if (Number.isNaN(d.getTime())) return '';
+    return `${d.getMonth() + 1}月${d.getDate()}日`;
+};
+
+const sanitizeFileName = (value: string): string => {
+    return value.replace(/[\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
+};
+
+const taxAmountOf = (amount: number, taxRate: string | number | null | undefined): number => {
+    const rate = numOf(taxRate);
+    if (!rate) return 0;
+    return Math.round(amount * (rate / 100));
 };
 
 const customerAddress = (c: CustomerRow | CustomerSearchResult | null): string => {
@@ -342,6 +375,473 @@ const StatusBadge: React.FC<{
     return <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${tone}`}>{label}</span>;
 };
 
+
+// ---------------------------------------------------------------------------
+// Invoice PDF Preview Modal
+// ---------------------------------------------------------------------------
+
+const InvoicePdfPreviewModal: React.FC<{
+    combined: CombinedInvoice;
+    details: InvoiceDetailRow[];
+    masterName: (legacyId: string | null | undefined) => string;
+    onClose: () => void;
+}> = ({ combined, details, masterName, onClose }) => {
+    const { invoice, project, customer, salesUser } = combined;
+    const subtotal = numOf(invoice.subtotal);
+    const consumption = numOf(invoice.consumption);
+    const total = numOf(invoice.total);
+    const invoiceDate = invoice.create_date || new Date().toISOString();
+    const invoiceMonthDay = formatJapaneseMonthDay(invoice.delivery_date || invoice.create_date);
+    const salesUserName = salesUser?.name || project?.sales_user_code || '';
+    const maxRows = 14;
+    const taxRowCount = 1;
+    const spacerRowCount = 1;
+    const blankRows = Math.max(0, maxRows - details.length - taxRowCount - spacerRowCount);
+
+    const printInvoice = () => {
+        const originalTitle = document.title;
+        const nextTitle = sanitizeFileName(`請求書_${invoice.invoice_id || 'no'}_${customer?.customer_name || 'customer'}`);
+
+        document.title = nextTitle;
+        window.print();
+
+        window.setTimeout(() => {
+            document.title = originalTitle;
+        }, 1000);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-slate-950/70 z-[80] overflow-y-auto p-4 print:p-0 print:bg-white">
+            <style>{`
+                @page {
+                    size: A4 portrait;
+                    margin: 8mm;
+                }
+
+                @media print {
+                    body * {
+                        visibility: hidden !important;
+                    }
+                    .invoice-print-area,
+                    .invoice-print-area * {
+                        visibility: visible !important;
+                    }
+                    .invoice-print-area {
+                        position: absolute !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 100% !important;
+                        box-shadow: none !important;
+                    }
+                    .invoice-preview-toolbar {
+                        display: none !important;
+                    }
+                    .invoice-a4-page {
+                        margin: 0 !important;
+                        box-shadow: none !important;
+                        width: 188mm !important;
+                        min-height: 281mm !important;
+                        padding: 0 !important;
+                    }
+                }
+
+                .invoice-a4-page {
+                    width: 188mm;
+                    min-height: 281mm;
+                    margin: 0 auto;
+                    background: white;
+                    color: #111;
+                    box-sizing: border-box;
+                    padding: 0;
+                    font-family: 'Yu Gothic', 'Meiryo', Arial, sans-serif;
+                    font-size: 10px;
+                    line-height: 1.35;
+                }
+
+                .invoice-title {
+                    text-align: center;
+                    font-size: 22px;
+                    letter-spacing: 12px;
+                    font-weight: 700;
+                    margin-top: 2mm;
+                    margin-bottom: 2mm;
+                }
+
+                .invoice-top {
+                    display: grid;
+                    grid-template-columns: 48% 20% 32%;
+                    column-gap: 4mm;
+                    min-height: 48mm;
+                }
+
+                .invoice-address {
+                    padding-left: 9mm;
+                    padding-top: 3mm;
+                    font-size: 11px;
+                }
+
+                .invoice-address .customer-name {
+                    margin-top: 5mm;
+                    font-size: 12px;
+                }
+
+                .invoice-meta {
+                    padding-top: 8mm;
+                    font-size: 10px;
+                }
+
+                .invoice-meta-row {
+                    display: grid;
+                    grid-template-columns: 66px 1fr;
+                    gap: 3mm;
+                    margin-bottom: 3mm;
+                    align-items: center;
+                }
+
+                .seal-box {
+                    width: 34mm;
+                    height: 14mm;
+                    border: 1px solid #111;
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    margin-top: 2mm;
+                    font-size: 7px;
+                    text-align: center;
+                }
+
+                .seal-box div {
+                    border-right: 1px solid #111;
+                    padding-top: 1mm;
+                }
+                .seal-box div:last-child {
+                    border-right: none;
+                }
+
+                .invoice-company {
+                    position: relative;
+                    padding-top: 11mm;
+                    font-size: 8px;
+                    line-height: 1.35;
+                    min-height: 42mm;
+                }
+
+                .invoice-company .company-name-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 2mm;
+                    font-size: 14px;
+                    font-weight: 700;
+                    margin-bottom: 1mm;
+                    position: relative;
+                    z-index: 2;
+                }
+
+                .invoice-company .bp-mark {
+                    width: 9mm;
+                    height: 6mm;
+                    border: 1px solid #222;
+                    border-radius: 50%;
+                    font-size: 7px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: 700;
+                }
+
+                .company-stamp {
+                    position: absolute;
+                    top: 1mm;
+                    left: 33mm;
+                    width: 25mm;
+                    opacity: 0.82;
+                    z-index: 1;
+                }
+
+                .bank-lines {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    column-gap: 5mm;
+                    font-size: 7px;
+                    margin-top: 2mm;
+                    margin-bottom: 1.5mm;
+                    padding-left: 82mm;
+                }
+
+                .invoice-message {
+                    font-size: 8px;
+                    margin-bottom: 1mm;
+                }
+
+                .summary-table,
+                .detail-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    table-layout: fixed;
+                    color: #111;
+                }
+
+                .summary-table th,
+                .summary-table td {
+                    border: 1px solid #111;
+                    height: 5.5mm;
+                    text-align: center;
+                    vertical-align: middle;
+                    padding: 1mm;
+                    font-size: 8px;
+                    font-weight: 400;
+                }
+
+                .summary-table td {
+                    font-size: 10px;
+                    text-align: right;
+                    padding-right: 1.5mm;
+                }
+
+                .detail-table {
+                    margin-top: 5mm;
+                    font-size: 9px;
+                }
+
+                .detail-table th,
+                .detail-table td {
+                    border: 1px solid #111;
+                    vertical-align: middle;
+                    padding: 0.8mm 1mm;
+                    height: 7mm;
+                }
+
+                .detail-table th {
+                    text-align: center;
+                    height: 7mm;
+                    font-weight: 600;
+                    letter-spacing: 1px;
+                }
+
+                .detail-table .num {
+                    text-align: right;
+                    white-space: nowrap;
+                }
+
+                .detail-table .center {
+                    text-align: center;
+                }
+
+                .detail-table .small {
+                    font-size: 7px;
+                    line-height: 1.15;
+                }
+
+                .detail-table .product-cell {
+                    line-height: 1.15;
+                    word-break: break-word;
+                }
+
+                .page-count {
+                    text-align: right;
+                    margin-top: 6mm;
+                    font-size: 9px;
+                }
+            `}</style>
+
+            <div className="invoice-preview-toolbar max-w-[980px] mx-auto mb-4 flex justify-end gap-3">
+                <button
+                    onClick={printInvoice}
+                    className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700"
+                >
+                    印刷 / PDF保存
+                </button>
+                <button
+                    onClick={onClose}
+                    className="bg-slate-100 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200"
+                >
+                    閉じる
+                </button>
+            </div>
+
+            <div className="invoice-print-area">
+                <div className="invoice-a4-page shadow-2xl">
+                    <div className="invoice-title">請　求　書</div>
+
+                    <div className="invoice-top">
+                        <div className="invoice-address">
+                            <div>{customer?.post_no ? `〒${customer.post_no}` : ''}</div>
+                            <div>{[customer?.address_1, customer?.address_2].filter(Boolean).join(' ')}</div>
+                            <div className="customer-name">{customer?.customer_name || ''}御中</div>
+                        </div>
+
+                        <div className="invoice-meta">
+                            <div style={{ marginBottom: '5mm', fontSize: '11px' }}>{formatJapaneseDateForInvoice(invoiceDate)}</div>
+                            <div className="invoice-meta-row">
+                                <span>お客様コード</span>
+                                <span>{customer?.customer_code || project?.customer_code || ''}</span>
+                            </div>
+                            <div className="invoice-meta-row">
+                                <span>担　当　者</span>
+                                <span>{salesUserName}</span>
+                            </div>
+                            <div className="seal-box">
+                                <div>担当者</div>
+                                <div>検　印</div>
+                            </div>
+                        </div>
+
+                        <div className="invoice-company">
+                            <img src="/images/company-stamp.png" className="company-stamp" alt="社印" />
+                            <div className="company-name-row">
+                                <span className="bp-mark">bp</span>
+                                <span>文唱堂印刷株式会社</span>
+                            </div>
+                            <div>本　　社　東京都千代田区神田佐久間町3-37</div>
+                            <div>〒101-0025　TEL.03(3851)0111㈹</div>
+                            <div>FAX.03(3861)1979</div>
+                            <div style={{ marginTop: '1mm' }}>町屋工場　東京都荒川区町屋8-22-10</div>
+                            <div>〒116-0001　TEL.03(3819)2500㈹</div>
+                            <div>FAX.03(3819)2501</div>
+                        </div>
+                    </div>
+
+                    <div className="bank-lines">
+                        <div>■お振込先銀行　三菱UFJ銀行 神田駅前支店(当)2021103</div>
+                        <div>みずほ銀行 上野支店(当)0103458</div>
+                        <div>　三菱UFJ銀行 堀留支店(当)0301474</div>
+                        <div>三井住友銀行 神田支店(当)2003693</div>
+                    </div>
+                    <div className="invoice-message">
+                        毎度ありがとうございます。下記の通り御請求申し上げます。　　■適格請求書登録番号 ： T3-0100-0102-8004
+                    </div>
+
+                    <table className="summary-table">
+                        <colgroup>
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '11%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '11%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '9%' }} />
+                            <col style={{ width: '9%' }} />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>10％対象</th>
+                                <th>消費税額(10%)</th>
+                                <th>非課税対象</th>
+                                <th></th>
+                                <th>御買上額(税抜)</th>
+                                <th>値引額(税抜)</th>
+                                <th>消 費 税</th>
+                                <th>今回御買上額</th>
+                                <th>今回御請求額</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>{subtotal.toLocaleString()}</td>
+                                <td>{consumption.toLocaleString()}</td>
+                                <td>0</td>
+                                <td></td>
+                                <td>{subtotal.toLocaleString()}</td>
+                                <td>0</td>
+                                <td>{consumption.toLocaleString()}</td>
+                                <td>{total.toLocaleString()}</td>
+                                <td>{total.toLocaleString()}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <table className="detail-table">
+                        <colgroup>
+                            <col style={{ width: '10%' }} />
+                            <col style={{ width: '2.8%' }} />
+                            <col style={{ width: '35.2%' }} />
+                            <col style={{ width: '9%' }} />
+                            <col style={{ width: '5%' }} />
+                            <col style={{ width: '8%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '10%' }} />
+                            <col style={{ width: '8%' }} />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>月日</th>
+                                <th>区<br />分</th>
+                                <th>品　　名</th>
+                                <th>数　量</th>
+                                <th>単位</th>
+                                <th>単　価</th>
+                                <th>金　額</th>
+                                <th>消費税等</th>
+                                <th>摘　要</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {details.map((detail) => {
+                                const quantity = numOf(detail.quantity);
+                                const unitPrice = numOf(detail.unit_price);
+                                const amount = quantity * unitPrice;
+                                return (
+                                    <tr key={detail.row_uuid}>
+                                        <td>{invoiceMonthDay}</td>
+                                        <td className="center small">{masterName(detail.major_item)}</td>
+                                        <td className="product-cell">{detail.detail || ''}</td>
+                                        <td className="num">{quantity ? quantity.toLocaleString() : ''}</td>
+                                        <td className="center">{quantity ? '式' : ''}</td>
+                                        <td className="num">{unitPrice ? unitPrice.toLocaleString() : ''}</td>
+                                        <td className="num">{amount ? amount.toLocaleString() : ''}</td>
+                                        <td className="center">【外　税】</td>
+                                        <td className="small">{masterName(detail.medium_item)}</td>
+                                    </tr>
+                                );
+                            })}
+
+                            <tr>
+                                <td>{invoiceMonthDay}</td>
+                                <td></td>
+                                <td className="small">【 消　費　税　等 】<br />（対象額　{subtotal.toLocaleString()}円）</td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td className="num">{consumption.toLocaleString()}</td>
+                                <td></td>
+                            </tr>
+
+                            <tr>
+                                <td></td>
+                                <td></td>
+                                <td className="center">■　以下余白　■</td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                            </tr>
+
+                            {Array.from({ length: blankRows }).map((_, index) => (
+                                <tr key={`blank-${index}`}>
+                                    <td>&nbsp;</td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+
+                    <div className="page-count">1ページ中1ページ目</div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // ---------------------------------------------------------------------------
 // Detail Modal
 // ---------------------------------------------------------------------------
@@ -362,6 +862,8 @@ const InvoiceDetailModal: React.FC<{
     const [isMarkingPendingDelivery, setIsMarkingPendingDelivery] = useState(false);
     const [isMarkingDeliverySent, setIsMarkingDeliverySent] = useState(false);
     const [isMarkingPaid, setIsMarkingPaid] = useState(false);
+    const [isGeneratingExcel, setIsGeneratingExcel] = useState(false);
+    const [showPdfPreview, setShowPdfPreview] = useState(false);
 
     const isIssued = combined.issue?.issue_status === 'issued';
     const hasDelivery = !!combined.delivery;
@@ -401,14 +903,15 @@ const InvoiceDetailModal: React.FC<{
                     new Set(
                         sorted
                             .flatMap((d) => [d.major_item, d.medium_item])
-                            .filter((v): v is string => !!v),
+                            .filter((v): v is string => !!v)
+                            .map((v) => String(v).trim()),
                     ),
                 );
 
                 if (masterLegacyIds.length > 0) {
                     const { data: masterData, error: masterError } = await supabase
                         .from('master_legacy')
-                        .select('legacy_id, name')
+                        .select('legacy_id, key_name, value')
                         .in('legacy_id', masterLegacyIds);
 
                     if (masterError) {
@@ -416,8 +919,9 @@ const InvoiceDetailModal: React.FC<{
                     } else if (!cancelled) {
                         const nextMasterMap: Record<string, string> = {};
                         ((masterData || []) as MasterLegacyRow[]).forEach((m) => {
-                            if (m.legacy_id) {
-                                nextMasterMap[String(m.legacy_id)] = m.name || String(m.legacy_id);
+                            const key = m.legacy_id ? String(m.legacy_id).trim() : '';
+                            if (key) {
+                                nextMasterMap[key] = m.value || key;
                             }
                         });
                         setMasterMap(nextMasterMap);
@@ -441,7 +945,8 @@ const InvoiceDetailModal: React.FC<{
 
     const masterName = (legacyId: string | null | undefined): string => {
         if (!legacyId) return '—';
-        return masterMap[String(legacyId)] || String(legacyId);
+        const key = String(legacyId).trim();
+        return masterMap[key] || key;
     };
 
     const handleMarkAsIssued = async () => {
@@ -494,6 +999,117 @@ const InvoiceDetailModal: React.FC<{
             await onMarkAsPaid(combined);
         } finally {
             setIsMarkingPaid(false);
+        }
+    };
+
+
+    const handleGenerateInvoiceExcel = async () => {
+        if (details.length === 0) {
+            window.alert('請求明細がないため、Excelを生成できません。');
+            return;
+        }
+
+        setIsGeneratingExcel(true);
+
+        try {
+            const ExcelJS = await import('exceljs');
+            const { saveAs } = await import('file-saver');
+
+            const response = await fetch('/templates/invoice_format.xlsx');
+            if (!response.ok) {
+                throw new Error('請求書テンプレート /templates/invoice_format.xlsx を読み込めませんでした。');
+            }
+
+            const templateBuffer = await response.arrayBuffer();
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(templateBuffer);
+
+            const worksheet = workbook.getWorksheet('フォーマット') || workbook.worksheets[0];
+            if (!worksheet) {
+                throw new Error('請求書テンプレートに有効なシートがありません。');
+            }
+
+            const setCell = (address: string, value: string | number | null) => {
+                worksheet.getCell(address).value = value;
+            };
+
+            const customerName = customer?.customer_name || '';
+            const customerCode = customer?.customer_code || project?.customer_code || '';
+            const postNo = customer?.post_no ? `〒${customer.post_no}` : '';
+            const address = [customer?.address_1 || '', customer?.address_2 || ''].filter(Boolean).join(' ');
+            const subtotal = numOf(invoice.subtotal);
+            const consumption = numOf(invoice.consumption);
+            const total = numOf(invoice.total);
+            const invoiceDate = invoice.create_date || new Date().toISOString();
+
+            // 宛先・請求日・顧客コード
+            setCell('A1', postNo);
+            setCell('A2', address);
+            setCell('A3', customerName ? `${customerName}御中` : '');
+            setCell('G5', formatJapaneseDateForInvoice(invoiceDate));
+            setCell('G6', 'お客様コード');
+            setCell('I6', customerCode);
+
+            // 集計欄。テンプレート側の数式に依存せず、基幹請求データの値を直接入れます。
+            setCell('A13', subtotal); // 10%対象
+            setCell('C13', consumption); // 消費税額(10%)
+            setCell('E13', 0); // 非課税対象
+            setCell('F13', subtotal); // 御買上額(税抜)
+            setCell('H13', 0); // 値引額(税抜)
+            setCell('J13', consumption); // 消費税
+            setCell('L13', total); // 今回御買上額
+            setCell('N13', total); // 今回御請求額
+
+            const startRow = 16;
+            const maxDetailRows = 34; // 16〜49行目を明細エリアとして使用
+            const clearColumns = ['A', 'B', 'C', 'G', 'H', 'I', 'K', 'M', 'O'];
+
+            for (let i = 0; i < maxDetailRows; i += 1) {
+                const rowNo = startRow + i;
+                clearColumns.forEach((col) => {
+                    worksheet.getCell(`${col}${rowNo}`).value = null;
+                });
+            }
+
+            details.slice(0, maxDetailRows).forEach((detail, index) => {
+                const rowNo = startRow + index;
+                const quantity = numOf(detail.quantity);
+                const unitPrice = numOf(detail.unit_price);
+                const amount = quantity * unitPrice;
+                const tax = taxAmountOf(amount, detail.tax_rate);
+
+                setCell(`A${rowNo}`, formatJapaneseMonthDay(invoice.delivery_date || invoice.create_date));
+                setCell(`B${rowNo}`, masterName(detail.major_item));
+                setCell(`C${rowNo}`, detail.detail || '');
+                setCell(`G${rowNo}`, quantity || null);
+                setCell(`H${rowNo}`, '');
+                setCell(`I${rowNo}`, unitPrice || null);
+                setCell(`K${rowNo}`, amount || null);
+                setCell(`M${rowNo}`, tax || null);
+                setCell(`O${rowNo}`, detail.tax_rate ? `${detail.tax_rate}%対象` : '');
+            });
+
+            const remainingRow = startRow + details.length;
+            if (remainingRow < startRow + maxDetailRows) {
+                setCell(`C${remainingRow}`, '■　以下余白　■');
+            }
+
+            if (details.length > maxDetailRows) {
+                window.alert(`明細が${details.length}行あります。テンプレートに収まる先頭${maxDetailRows}行のみ出力しました。`);
+            }
+
+            const fileName = sanitizeFileName(`請求書_${invoice.invoice_id || 'no'}_${customerName || 'customer'}.xlsx`);
+            const outputBuffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([outputBuffer as BlobPart], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            });
+
+            saveAs(blob, fileName);
+        } catch (e) {
+            console.error('[LegacyInvoiceBillingPage] failed to generate invoice Excel', e);
+            window.alert(e instanceof Error ? e.message : '請求書Excelの生成に失敗しました。');
+        } finally {
+            setIsGeneratingExcel(false);
         }
     };
 
@@ -719,6 +1335,11 @@ const InvoiceDetailModal: React.FC<{
                         <StatusBadge status={combined.payment?.payment_status} kind="payment" />
                     </div>
 
+                    <button onClick={() => setShowPdfPreview(true)} disabled={isLoading || details.length === 0} className="flex items-center gap-2 bg-slate-800 text-white font-semibold py-2 px-4 rounded-lg hover:bg-slate-900 disabled:bg-slate-400">
+                        <FileText className="w-5 h-5" />
+                        請求書PDFプレビュー
+                    </button>
+
                     {!isIssued && (
                         <button onClick={handleMarkAsIssued} disabled={isMarkingIssued} className="flex items-center gap-2 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400">
                             {isMarkingIssued ? <Loader className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
@@ -752,6 +1373,14 @@ const InvoiceDetailModal: React.FC<{
                     </button>
                 </div>
             </div>
+            {showPdfPreview && (
+                <InvoicePdfPreviewModal
+                    combined={combined}
+                    details={details}
+                    masterName={masterName}
+                    onClose={() => setShowPdfPreview(false)}
+                />
+            )}
         </div>
     );
 };
@@ -1101,6 +1730,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     const [invoices, setInvoices] = useState<InvoiceLegacyRow[]>([]);
     const [projects, setProjects] = useState<Record<string, ProjectLegacyRow>>({});
     const [customers, setCustomers] = useState<Record<string, CustomerRow>>({});
+    const [users, setUsers] = useState<Record<string, UserRow>>({});
     const [issues, setIssues] = useState<Record<string, IssueRecordRow>>({});
     const [deliveries, setDeliveries] = useState<Record<string, DeliveryRecordRow>>({});
     const [payments, setPayments] = useState<Record<string, PaymentMatchRow>>({});
@@ -1135,7 +1765,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             if (projectUuids.length > 0) {
                 const { data, error: projectsByUuidError } = await supabase
                     .from('projects_legacy')
-                    .select('id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code')
+                    .select('id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code, sales_user_id, sales_user_code')
                     .in('id', projectUuids);
 
                 if (projectsByUuidError) {
@@ -1152,7 +1782,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             if (projectIds.length > 0) {
                 const { data, error: projectsByProjectIdError } = await supabase
                     .from('projects_legacy')
-                    .select('id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code')
+                    .select('id, project_id, project_code, order_id, order_code, project_name, customer_id, customer_code, sales_user_id, sales_user_code')
                     .in('project_id', projectIds);
 
                 if (projectsByProjectIdError) {
@@ -1201,6 +1831,48 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 custMap[c.id] = c;
             });
             setCustomers(custMap);
+
+            const salesUserIds = Array.from(
+                new Set(Object.values(mergedProjectMap).map((p) => p.sales_user_id).filter((id): id is string => !!id)),
+            );
+            const salesUserCodes = Array.from(
+                new Set(Object.values(mergedProjectMap).map((p) => p.sales_user_code).filter((code): code is string => !!code)),
+            );
+            const userMap: Record<string, UserRow> = {};
+
+            if (salesUserIds.length > 0) {
+                const { data, error: usersByIdError } = await supabase
+                    .from('users')
+                    .select('id, user_code, name')
+                    .in('id', salesUserIds);
+
+                if (usersByIdError) {
+                    logSupabaseError('users by id', usersByIdError);
+                } else {
+                    ((data || []) as UserRow[]).forEach((u) => {
+                        if (u.id) userMap[u.id] = u;
+                        if (u.user_code) userMap[u.user_code] = u;
+                    });
+                }
+            }
+
+            if (salesUserCodes.length > 0) {
+                const { data, error: usersByCodeError } = await supabase
+                    .from('users')
+                    .select('id, user_code, name')
+                    .in('user_code', salesUserCodes);
+
+                if (usersByCodeError) {
+                    logSupabaseError('users by user_code', usersByCodeError);
+                } else {
+                    ((data || []) as UserRow[]).forEach((u) => {
+                        if (u.id) userMap[u.id] = u;
+                        if (u.user_code) userMap[u.user_code] = u;
+                    });
+                }
+            }
+
+            setUsers(userMap);
 
             const { data: issueData, error: issueError } = await supabase
                 .from('invoice_issue_records')
@@ -1297,17 +1969,23 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 null;
             const customerId = project?.customer_id || invoice.customer_uuid || null;
             const customer = customerId ? customers[customerId] || null : null;
+            const salesUser = project?.sales_user_id
+                ? users[project.sales_user_id] || null
+                : project?.sales_user_code
+                  ? users[project.sales_user_code] || null
+                  : null;
 
             return {
                 invoice,
                 project,
                 customer,
+                salesUser,
                 issue: getRecordByInvoice(issues, invoice),
                 delivery: getRecordByInvoice(deliveries, invoice),
                 payment: getRecordByInvoice(payments, invoice),
             };
         });
-    }, [invoices, projects, customers, issues, deliveries, payments]);
+    }, [invoices, projects, customers, users, issues, deliveries, payments]);
 
     const filteredInvoices = useMemo(() => {
         let rows = combinedInvoices;
