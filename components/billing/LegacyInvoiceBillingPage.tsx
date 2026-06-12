@@ -377,7 +377,7 @@ const StatusBadge: React.FC<{
 
 
 // ---------------------------------------------------------------------------
-// Invoice PDF Preview Modal - 背景テンプレート方式
+// Invoice PDF Preview Modal - 背景テンプレート方式 / 右端切れ対策版
 // ---------------------------------------------------------------------------
 
 const InvoicePdfPreviewModal: React.FC<{
@@ -414,12 +414,6 @@ const InvoicePdfPreviewModal: React.FC<{
         if (!n) return '';
 
         return n.toLocaleString();
-    };
-
-    const formatTaxText = (amount: number): string => {
-        if (!amount) return '';
-
-        return amount.toLocaleString();
     };
 
     const pageDetailsList = useMemo(() => {
@@ -504,7 +498,7 @@ const InvoicePdfPreviewModal: React.FC<{
         });
 
     const handleClickPage = (e: React.MouseEvent<HTMLDivElement>) => {
-        // 座標確認用。不要になったら削除してOKです。
+        // Alt + クリックで座標確認
         if (!e.altKey) return;
 
         const rect = e.currentTarget.getBoundingClientRect();
@@ -526,6 +520,12 @@ const InvoicePdfPreviewModal: React.FC<{
                 }
 
                 @media print {
+                    html,
+                    body {
+                        margin: 0 !important;
+                        padding: 0 !important;
+                    }
+
                     body * {
                         visibility: hidden !important;
                     }
@@ -548,13 +548,27 @@ const InvoicePdfPreviewModal: React.FC<{
                     }
 
                     .invoice-template-page {
-                        margin: 0 !important;
+                        width: 210mm !important;
+                        height: 297mm !important;
+                        margin: 0 auto !important;
                         box-shadow: none !important;
+                        overflow: hidden !important;
                         page-break-after: always;
+                        break-after: page;
                     }
 
                     .invoice-template-page:last-child {
                         page-break-after: auto;
+                        break-after: auto;
+                    }
+
+                    .invoice-template-inner {
+                        left: 50% !important;
+                        top: 50% !important;
+                        width: 210mm !important;
+                        height: 297mm !important;
+                        transform: translate(-50%, -50%) scale(0.94) !important;
+                        transform-origin: center center !important;
                     }
                 }
 
@@ -569,6 +583,16 @@ const InvoicePdfPreviewModal: React.FC<{
                     box-sizing: border-box;
                     font-family: "Yu Gothic", "Meiryo", Arial, sans-serif;
                     box-shadow: 0 20px 50px rgba(15, 23, 42, 0.35);
+                }
+
+                .invoice-template-inner {
+                    position: absolute;
+                    left: 50%;
+                    top: 50%;
+                    width: 210mm;
+                    height: 297mm;
+                    transform: translate(-50%, -50%) scale(0.94);
+                    transform-origin: center center;
                 }
 
                 .invoice-template-bg {
@@ -644,305 +668,306 @@ const InvoicePdfPreviewModal: React.FC<{
                         <div
                             key={`invoice-page-${pageIndex}`}
                             className="invoice-template-page"
-                            onClick={handleClickPage}
                         >
-                            <img
-                                src="/images/invoice-template-bg.png"
-                                className="invoice-template-bg"
-                                alt=""
-                            />
+                            <div className="invoice-template-inner" onClick={handleClickPage}>
+                                <img
+                                    src="/images/invoice-template-bg.png"
+                                    className="invoice-template-bg"
+                                    alt=""
+                                />
 
-                            {/* 宛先：全ページ同じ背景を使うため、各ページに表示 */}
-                            <div
-                                className="invoice-field"
-                                style={fieldStyle({
-                                    x: 18,
-                                    y: 26,
-                                    fontSize: 11,
-                                    width: 80,
+                                {/* 宛先 */}
+                                <div
+                                    className="invoice-field"
+                                    style={fieldStyle({
+                                        x: 18,
+                                        y: 26,
+                                        fontSize: 11,
+                                        width: 80,
+                                    })}
+                                >
+                                    {customer?.post_no ? `〒${customer.post_no}` : ''}
+                                </div>
+
+                                <div
+                                    className="invoice-field"
+                                    style={fieldStyle({
+                                        x: 18,
+                                        y: 31,
+                                        fontSize: 11,
+                                        width: 90,
+                                    })}
+                                >
+                                    {[customer?.address_1, customer?.address_2].filter(Boolean).join(' ')}
+                                </div>
+
+                                <div
+                                    className="invoice-field"
+                                    style={fieldStyle({
+                                        x: 18,
+                                        y: 38.5,
+                                        fontSize: 11,
+                                        width: 90,
+                                    })}
+                                >
+                                    {customer?.customer_name ? `${customer.customer_name} 御中` : ''}
+                                </div>
+
+                                {/* 右上可変項目 */}
+                                <div
+                                    className="invoice-field"
+                                    style={fieldStyle({
+                                        x: 108.5,
+                                        y: 38,
+                                        fontSize: 11,
+                                        width: 42,
+                                    })}
+                                >
+                                    {formatInvoiceDate(invoiceDate)}
+                                </div>
+
+                                <div
+                                    className="invoice-field"
+                                    style={fieldStyle({
+                                        x: 108.5,
+                                        y: 47.5,
+                                        fontSize: 8,
+                                        width: 50,
+                                    })}
+                                >
+                                    お客様コード {customer?.customer_code || project?.customer_code || ''}
+                                </div>
+
+                                <div
+                                    className="invoice-field"
+                                    style={fieldStyle({
+                                        x: 108.5,
+                                        y: 54.7,
+                                        fontSize: 8,
+                                        width: 50,
+                                    })}
+                                >
+                                    担当者 {salesUserName}
+                                </div>
+
+                                {/* 集計欄：右上原点 */}
+                                <div
+                                    className="invoice-field amount"
+                                    style={rightFieldStyle({
+                                        rightX: 28.3,
+                                        y: 110,
+                                        width: 20,
+                                        fontSize: 10,
+                                    })}
+                                >
+                                    {formatNumber(subtotal)}
+                                </div>
+
+                                <div
+                                    className="invoice-field amount"
+                                    style={rightFieldStyle({
+                                        rightX: 49,
+                                        y: 110,
+                                        width: 20,
+                                        fontSize: 10,
+                                    })}
+                                >
+                                    {formatNumber(consumption)}
+                                </div>
+
+                                <div
+                                    className="invoice-field amount"
+                                    style={rightFieldStyle({
+                                        rightX: 69.7,
+                                        y: 110,
+                                        width: 18,
+                                        fontSize: 10,
+                                    })}
+                                >
+                                    0
+                                </div>
+
+                                <div
+                                    className="invoice-field amount"
+                                    style={rightFieldStyle({
+                                        rightX: 113.7,
+                                        y: 110,
+                                        width: 24,
+                                        fontSize: 10,
+                                    })}
+                                >
+                                    {formatNumber(subtotal)}
+                                </div>
+
+                                {/* 値引額は空欄 */}
+
+                                <div
+                                    className="invoice-field amount"
+                                    style={rightFieldStyle({
+                                        rightX: 158.5,
+                                        y: 110,
+                                        width: 22,
+                                        fontSize: 10,
+                                    })}
+                                >
+                                    {formatNumber(consumption)}
+                                </div>
+
+                                <div
+                                    className="invoice-field amount"
+                                    style={rightFieldStyle({
+                                        rightX: 179.7,
+                                        y: 110,
+                                        width: 24,
+                                        fontSize: 10,
+                                    })}
+                                >
+                                    {formatNumber(total)}
+                                </div>
+
+                                <div
+                                    className="invoice-field amount"
+                                    style={rightFieldStyle({
+                                        rightX: 201.9,
+                                        y: 110,
+                                        width: 24,
+                                        fontSize: 10,
+                                    })}
+                                >
+                                    {formatNumber(total)}
+                                </div>
+
+                                {/* 明細 */}
+                                {pageDetails.map((detail, rowIndex) => {
+                                    const quantity = numOf(detail.quantity);
+                                    const unitPrice = numOf(detail.unit_price);
+                                    const amount = quantity * unitPrice;
+
+                                    return (
+                                        <React.Fragment key={detail.row_uuid}>
+                                            <div
+                                                className="invoice-field"
+                                                style={detailTextStyle(9.3, rowIndex, 18, 10)}
+                                            >
+                                                {invoiceMonthDay}
+                                            </div>
+
+                                            {/* 区分列は使用しない */}
+
+                                            <div
+                                                className="invoice-field product"
+                                                style={detailTextStyle(29.7, rowIndex, 78, 10)}
+                                            >
+                                                {detail.detail || ''}
+                                            </div>
+
+                                            <div
+                                                className="invoice-field amount"
+                                                style={detailRightStyle(113.7, rowIndex, 18, 10)}
+                                            >
+                                                {quantity ? quantity.toLocaleString() : ''}
+                                            </div>
+
+                                            {/* 単位は空欄 */}
+
+                                            <div
+                                                className="invoice-field amount"
+                                                style={detailRightStyle(141, rowIndex, 22, 10)}
+                                            >
+                                                {unitPrice ? unitPrice.toLocaleString() : ''}
+                                            </div>
+
+                                            <div
+                                                className="invoice-field amount"
+                                                style={detailRightStyle(163.9, rowIndex, 24, 10)}
+                                            >
+                                                {amount ? amount.toLocaleString() : ''}
+                                            </div>
+
+                                            <div
+                                                className="invoice-field amount"
+                                                style={detailRightStyle(184.9, rowIndex, 20, 10)}
+                                            >
+                                                【外 税】
+                                            </div>
+
+                                            <div
+                                                className="invoice-field"
+                                                style={detailTextStyle(187.3, rowIndex, 18, 9)}
+                                            >
+                                                {masterName(detail.medium_item) === '—'
+                                                    ? ''
+                                                    : masterName(detail.medium_item)}
+                                            </div>
+                                        </React.Fragment>
+                                    );
                                 })}
-                            >
-                                {customer?.post_no ? `〒${customer.post_no}` : ''}
-                            </div>
 
-                            <div
-                                className="invoice-field"
-                                style={fieldStyle({
-                                    x: 18,
-                                    y: 31,
-                                    fontSize: 11,
-                                    width: 90,
-                                })}
-                            >
-                                {[customer?.address_1, customer?.address_2].filter(Boolean).join(' ')}
-                            </div>
-
-                            <div
-                                className="invoice-field"
-                                style={fieldStyle({
-                                    x: 18,
-                                    y: 38.5,
-                                    fontSize: 11,
-                                    width: 90,
-                                })}
-                            >
-                                {customer?.customer_name ? `${customer.customer_name} 御中` : ''}
-                            </div>
-
-                            {/* 右上可変項目 */}
-                            <div
-                                className="invoice-field"
-                                style={fieldStyle({
-                                    x: 108.5,
-                                    y: 38,
-                                    fontSize: 11,
-                                    width: 42,
-                                })}
-                            >
-                                {formatInvoiceDate(invoiceDate)}
-                            </div>
-
-                            <div
-                                className="invoice-field"
-                                style={fieldStyle({
-                                    x: 108.5,
-                                    y: 47.5,
-                                    fontSize: 8,
-                                    width: 45,
-                                })}
-                            >
-                                お客様コード {customer?.customer_code || project?.customer_code || ''}
-                            </div>
-
-                            <div
-                                className="invoice-field"
-                                style={fieldStyle({
-                                    x: 108.5,
-                                    y: 54.7,
-                                    fontSize: 8,
-                                    width: 45,
-                                })}
-                            >
-                                担当者 {salesUserName}
-                            </div>
-
-                            {/* 集計欄：右上原点 */}
-                            <div
-                                className="invoice-field amount"
-                                style={rightFieldStyle({
-                                    rightX: 28.3,
-                                    y: 110,
-                                    width: 20,
-                                    fontSize: 10,
-                                })}
-                            >
-                                {formatNumber(subtotal)}
-                            </div>
-
-                            <div
-                                className="invoice-field amount"
-                                style={rightFieldStyle({
-                                    rightX: 49,
-                                    y: 110,
-                                    width: 20,
-                                    fontSize: 10,
-                                })}
-                            >
-                                {formatNumber(consumption)}
-                            </div>
-
-                            <div
-                                className="invoice-field amount"
-                                style={rightFieldStyle({
-                                    rightX: 69.7,
-                                    y: 110,
-                                    width: 18,
-                                    fontSize: 10,
-                                })}
-                            >
-                                0
-                            </div>
-
-                            <div
-                                className="invoice-field amount"
-                                style={rightFieldStyle({
-                                    rightX: 113.7,
-                                    y: 110,
-                                    width: 24,
-                                    fontSize: 10,
-                                })}
-                            >
-                                {formatNumber(subtotal)}
-                            </div>
-
-                            {/* 値引額は空欄 */}
-
-                            <div
-                                className="invoice-field amount"
-                                style={rightFieldStyle({
-                                    rightX: 158.5,
-                                    y: 110,
-                                    width: 22,
-                                    fontSize: 10,
-                                })}
-                            >
-                                {formatNumber(consumption)}
-                            </div>
-
-                            <div
-                                className="invoice-field amount"
-                                style={rightFieldStyle({
-                                    rightX: 179.7,
-                                    y: 110,
-                                    width: 24,
-                                    fontSize: 10,
-                                })}
-                            >
-                                {formatNumber(total)}
-                            </div>
-
-                            <div
-                                className="invoice-field amount"
-                                style={rightFieldStyle({
-                                    rightX: 201.9,
-                                    y: 110,
-                                    width: 24,
-                                    fontSize: 10,
-                                })}
-                            >
-                                {formatNumber(total)}
-                            </div>
-
-                            {/* 明細 */}
-                            {pageDetails.map((detail, rowIndex) => {
-                                const quantity = numOf(detail.quantity);
-                                const unitPrice = numOf(detail.unit_price);
-                                const amount = quantity * unitPrice;
-
-                                return (
-                                    <React.Fragment key={detail.row_uuid}>
+                                {/* 最終ページのみ：消費税等・以下余白 */}
+                                {isLastPage && (
+                                    <>
                                         <div
                                             className="invoice-field"
-                                            style={detailTextStyle(9.3, rowIndex, 18, 10)}
+                                            style={fieldStyle({
+                                                x: 29.7,
+                                                y: taxRowY,
+                                                width: 70,
+                                                fontSize: 9,
+                                            })}
                                         >
-                                            {invoiceMonthDay}
-                                        </div>
-
-                                        {/* 区分列は使用しない */}
-
-                                        <div
-                                            className="invoice-field product"
-                                            style={detailTextStyle(29.7, rowIndex, 78, 10)}
-                                        >
-                                            {detail.detail || ''}
-                                        </div>
-
-                                        <div
-                                            className="invoice-field amount"
-                                            style={detailRightStyle(113.7, rowIndex, 18, 10)}
-                                        >
-                                            {quantity ? quantity.toLocaleString() : ''}
-                                        </div>
-
-                                        {/* 単位は空欄 */}
-
-                                        <div
-                                            className="invoice-field amount"
-                                            style={detailRightStyle(141, rowIndex, 22, 10)}
-                                        >
-                                            {unitPrice ? unitPrice.toLocaleString() : ''}
-                                        </div>
-
-                                        <div
-                                            className="invoice-field amount"
-                                            style={detailRightStyle(163.9, rowIndex, 24, 10)}
-                                        >
-                                            {amount ? amount.toLocaleString() : ''}
-                                        </div>
-
-                                        <div
-                                            className="invoice-field amount"
-                                            style={detailRightStyle(184.9, rowIndex, 20, 10)}
-                                        >
-                                            【外 税】
+                                            【　消　費　税　等　】
                                         </div>
 
                                         <div
                                             className="invoice-field"
-                                            style={detailTextStyle(187.3, rowIndex, 18, 9)}
+                                            style={fieldStyle({
+                                                x: 29.7,
+                                                y: targetAmountY,
+                                                width: 70,
+                                                fontSize: 9,
+                                            })}
                                         >
-                                            {masterName(detail.medium_item) === '—'
-                                                ? ''
-                                                : masterName(detail.medium_item)}
+                                            （対象額　{subtotal.toLocaleString()}円）
                                         </div>
-                                    </React.Fragment>
-                                );
-                            })}
 
-                            {/* 最終ページのみ：消費税等・以下余白 */}
-                            {isLastPage && (
-                                <>
-                                    <div
-                                        className="invoice-field"
-                                        style={fieldStyle({
-                                            x: 29.7,
-                                            y: taxRowY,
-                                            width: 70,
-                                            fontSize: 9,
-                                        })}
-                                    >
-                                        【　消　費　税　等　】
-                                    </div>
+                                        <div
+                                            className="invoice-field amount"
+                                            style={rightFieldStyle({
+                                                rightX: 184.9,
+                                                y: taxRowY,
+                                                width: 22,
+                                                fontSize: 10,
+                                            })}
+                                        >
+                                            {formatNumber(consumption)}
+                                        </div>
 
-                                    <div
-                                        className="invoice-field"
-                                        style={fieldStyle({
-                                            x: 29.7,
-                                            y: targetAmountY,
-                                            width: 70,
-                                            fontSize: 9,
-                                        })}
-                                    >
-                                        （対象額　{subtotal.toLocaleString()}円）
-                                    </div>
+                                        <div
+                                            className="invoice-field"
+                                            style={fieldStyle({
+                                                x: 88.7,
+                                                y: blankY,
+                                                width: 45,
+                                                fontSize: 9,
+                                                align: 'center',
+                                            })}
+                                        >
+                                            ■　以下余白　■
+                                        </div>
+                                    </>
+                                )}
 
-                                    <div
-                                        className="invoice-field amount"
-                                        style={rightFieldStyle({
-                                            rightX: 184.9,
-                                            y: taxRowY,
-                                            width: 22,
-                                            fontSize: 10,
-                                        })}
-                                    >
-                                        {formatTaxText(consumption)}
-                                    </div>
-
-                                    <div
-                                        className="invoice-field"
-                                        style={fieldStyle({
-                                            x: 88.7,
-                                            y: blankY,
-                                            width: 45,
-                                            fontSize: 9,
-                                            align: 'center',
-                                        })}
-                                    >
-                                        ■　以下余白　■
-                                    </div>
-                                </>
-                            )}
-
-                            <div
-                                className="invoice-field page-count"
-                                style={rightFieldStyle({
-                                    rightX: 168.4,
-                                    y: 288,
-                                    width: 45,
-                                    fontSize: 9,
-                                })}
-                            >
-                                {totalPages}ページ中{pageIndex + 1}ページ目
+                                <div
+                                    className="invoice-field page-count"
+                                    style={rightFieldStyle({
+                                        rightX: 168.4,
+                                        y: 288,
+                                        width: 45,
+                                        fontSize: 9,
+                                    })}
+                                >
+                                    {totalPages}ページ中{pageIndex + 1}ページ目
+                                </div>
                             </div>
                         </div>
                     );
