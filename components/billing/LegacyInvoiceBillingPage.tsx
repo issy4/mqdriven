@@ -393,7 +393,7 @@ const InvoicePdfPreviewModal: React.FC<{
     const invoiceDate = invoice.create_date || new Date().toISOString();
     const invoiceMonthDay = formatJapaneseMonthDay(invoice.delivery_date || invoice.create_date);
     const salesUserName = salesUser?.name || project?.sales_user_code || '';
-    const maxRows = 22;
+    const maxRows = 18;
     const taxRowCount = 1;
     const spacerRowCount = 1;
     const blankRows = Math.max(0, maxRows - details.length - taxRowCount - spacerRowCount);
@@ -573,29 +573,55 @@ const InvoicePdfPreviewModal: React.FC<{
                 }
 
                 .summary-table,
-                .detail-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    table-layout: fixed;
-                    color: #111;
-                }
+.detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    color: #111;
+}
 
-                .summary-table th,
-                .summary-table td {
-                    border: 1px solid #111;
-                    height: 5.5mm;
-                    text-align: center;
-                    vertical-align: middle;
-                    padding: 1mm;
-                    font-size: 8px;
-                    font-weight: 400;
-                }
+.summary-table {
+    width: 98%;
+    margin-left: auto;
+    margin-right: auto;
+    border: 1px solid #111;
+    margin-top: 0;
+}
 
-                .summary-table td {
-                    font-size: 10px;
-                    text-align: right;
-                    padding-right: 1.5mm;
-                }
+.summary-table th,
+.summary-table td {
+    border: 1px solid #111;
+    text-align: center;
+    vertical-align: middle;
+    padding: 0.4mm 0.6mm;
+    font-weight: 400;
+    box-sizing: border-box;
+}
+
+.summary-table th {
+    height: 7mm;
+    font-size: 7px;
+    line-height: 1.15;
+}
+
+.summary-table td {
+    height: 6mm;
+    font-size: 8px;
+    line-height: 1.1;
+    text-align: right;
+    padding-right: 1mm;
+}
+
+/* 左右端の罫線を確実に出す */
+.summary-table th:first-child,
+.summary-table td:first-child {
+    border-left: 1px solid #111 !important;
+}
+
+.summary-table th:last-child,
+.summary-table td:last-child {
+    border-right: 1px solid #111 !important;
+}
 
                 .detail-table {
     margin-top: 4mm;
@@ -727,15 +753,15 @@ const InvoicePdfPreviewModal: React.FC<{
 
                     <table className="summary-table">
                         <colgroup>
+                            <col style={{ width: '11.5%' }} />
+                            <col style={{ width: '11.5%' }} />
+                            <col style={{ width: '11.5%' }} />
+                            <col style={{ width: '10.5%' }} />
                             <col style={{ width: '12%' }} />
+                            <col style={{ width: '10.5%' }} />
                             <col style={{ width: '12%' }} />
-                            <col style={{ width: '12%' }} />
-                            <col style={{ width: '11%' }} />
-                            <col style={{ width: '12%' }} />
-                            <col style={{ width: '11%' }} />
-                            <col style={{ width: '12%' }} />
-                            <col style={{ width: '9%' }} />
-                            <col style={{ width: '9%' }} />
+                            <col style={{ width: '10.25%' }} />
+                            <col style={{ width: '10.25%' }} />
                         </colgroup>
                         <thead>
                             <tr>
