@@ -598,17 +598,38 @@ const InvoicePdfPreviewModal: React.FC<{
                 }
 
                 .detail-table {
-    margin-top: 6mm;
-    font-size: 8px;
+    margin-top: 4mm;
+    font-size: 6.8px;
+    line-height: 1;
 }
 
 .detail-table th,
 .detail-table td {
     border: 1px solid #111;
     vertical-align: middle;
-    padding: 0.4mm 0.7mm;
-    height: 5.8mm;
-    line-height: 1.15;
+    padding: 0.15mm 0.45mm;
+    height: auto;
+    line-height: 1;
+    box-sizing: border-box;
+}
+
+.detail-table thead th {
+    height: 5.2mm;
+    padding: 0.2mm 0.4mm;
+    font-size: 7px;
+    line-height: 1.05;
+    text-align: center;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
+.detail-table tbody td {
+    height: 4.9mm;
+    max-height: 4.9mm;
+    padding-top: 0.1mm;
+    padding-bottom: 0.1mm;
+    font-size: 6.8px;
+    line-height: 1;
 }
 
 .detail-table th {
@@ -620,12 +641,13 @@ const InvoicePdfPreviewModal: React.FC<{
 }
 
 .detail-table .small {
-    font-size: 7px;
-    line-height: 1.1;
+    font-size: 6.2px;
+    line-height: 1;
 }
 
 .detail-table .product-cell {
-    line-height: 1.15;
+    font-size: 6.8px;
+    line-height: 1;
     word-break: break-word;
 }
 
