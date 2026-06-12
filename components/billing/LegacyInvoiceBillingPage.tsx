@@ -393,7 +393,7 @@ const InvoicePdfPreviewModal: React.FC<{
     const invoiceDate = invoice.create_date || new Date().toISOString();
     const invoiceMonthDay = formatJapaneseMonthDay(invoice.delivery_date || invoice.create_date);
     const salesUserName = salesUser?.name || project?.sales_user_code || '';
-    const maxRows = 14;
+    const maxRows = 20;
     const taxRowCount = 1;
     const spacerRowCount = 1;
     const blankRows = Math.max(0, maxRows - details.length - taxRowCount - spacerRowCount);
@@ -598,43 +598,36 @@ const InvoicePdfPreviewModal: React.FC<{
                 }
 
                 .detail-table {
-                    margin-top: 5mm;
-                    font-size: 9px;
-                }
+    margin-top: 6mm;
+    font-size: 8.5px;
+}
 
-                .detail-table th,
-                .detail-table td {
-                    border: 1px solid #111;
-                    vertical-align: middle;
-                    padding: 0.8mm 1mm;
-                    height: 7mm;
-                }
+.detail-table th,
+.detail-table td {
+    border: 1px solid #111;
+    vertical-align: middle;
+    padding: 0.6mm 0.8mm;
+    height: 6.4mm;
+    line-height: 1.15;
+}
 
-                .detail-table th {
-                    text-align: center;
-                    height: 7mm;
-                    font-weight: 600;
-                    letter-spacing: 1px;
-                }
+.detail-table th {
+    text-align: center;
+    height: 7mm;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    line-height: 1.15;
+}
 
-                .detail-table .num {
-                    text-align: right;
-                    white-space: nowrap;
-                }
+.detail-table .small {
+    font-size: 7px;
+    line-height: 1.1;
+}
 
-                .detail-table .center {
-                    text-align: center;
-                }
-
-                .detail-table .small {
-                    font-size: 7px;
-                    line-height: 1.15;
-                }
-
-                .detail-table .product-cell {
-                    line-height: 1.15;
-                    word-break: break-word;
-                }
+.detail-table .product-cell {
+    line-height: 1.15;
+    word-break: break-word;
+}
 
                 .page-count {
                     text-align: right;
@@ -752,15 +745,15 @@ const InvoicePdfPreviewModal: React.FC<{
 
                     <table className="detail-table">
                         <colgroup>
-                            <col style={{ width: '10%' }} />
-                            <col style={{ width: '2.8%' }} />
-                            <col style={{ width: '35.2%' }} />
-                            <col style={{ width: '9%' }} />
-                            <col style={{ width: '5%' }} />
-                            <col style={{ width: '8%' }} />
-                            <col style={{ width: '12%' }} />
-                            <col style={{ width: '10%' }} />
-                            <col style={{ width: '8%' }} />
+                            <col style={{ width: '9.5%' }} />
+<col style={{ width: '2.8%' }} />
+<col style={{ width: '36.7%' }} />
+<col style={{ width: '8.5%' }} />
+<col style={{ width: '4.8%' }} />
+<col style={{ width: '8%' }} />
+<col style={{ width: '11.5%' }} />
+<col style={{ width: '9.2%' }} />
+<col style={{ width: '9%' }} />
                         </colgroup>
                         <thead>
                             <tr>
