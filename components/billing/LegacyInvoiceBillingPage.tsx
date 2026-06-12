@@ -580,12 +580,12 @@ const InvoicePdfPreviewModal: React.FC<{
     color: #111;
 }
 
+/* 集計表：見本に合わせて横幅いっぱい、ただし右端が切れないようbox-sizing */
 .summary-table {
-    width: 98%;
-    margin-left: auto;
-    margin-right: auto;
+    width: 100%;
     border: 1px solid #111;
     margin-top: 0;
+    box-sizing: border-box;
 }
 
 .summary-table th,
@@ -593,26 +593,25 @@ const InvoicePdfPreviewModal: React.FC<{
     border: 1px solid #111;
     text-align: center;
     vertical-align: middle;
-    padding: 0.4mm 0.6mm;
     font-weight: 400;
     box-sizing: border-box;
 }
 
 .summary-table th {
-    height: 7mm;
+    height: 7.2mm;
+    padding: 0.45mm 0.5mm;
     font-size: 7px;
     line-height: 1.15;
 }
 
 .summary-table td {
-    height: 6mm;
+    height: 5.8mm;
+    padding: 0.35mm 1mm 0.35mm 0.5mm;
     font-size: 8px;
     line-height: 1.1;
     text-align: right;
-    padding-right: 1mm;
 }
 
-/* 左右端の罫線を確実に出す */
 .summary-table th:first-child,
 .summary-table td:first-child {
     border-left: 1px solid #111 !important;
@@ -623,57 +622,57 @@ const InvoicePdfPreviewModal: React.FC<{
     border-right: 1px solid #111 !important;
 }
 
-                .detail-table {
-    margin-top: 4mm;
-    font-size: 6.8px;
-    line-height: 1;
+/* 明細表：見本程度の行高に戻す。詰めすぎない */
+.detail-table {
+    margin-top: 5mm;
+    width: 100%;
+    border: 1px solid #111;
+    font-size: 7.4px;
+    line-height: 1.1;
+    box-sizing: border-box;
 }
 
 .detail-table th,
 .detail-table td {
     border: 1px solid #111;
     vertical-align: middle;
-    padding: 0.15mm 0.45mm;
-    height: auto;
-    line-height: 1;
     box-sizing: border-box;
 }
 
 .detail-table thead th {
-    height: 5.2mm;
-    padding: 0.2mm 0.4mm;
-    font-size: 7px;
-    line-height: 1.05;
+    height: 7.5mm;
+    padding: 0.35mm 0.5mm;
+    font-size: 7.2px;
+    line-height: 1.1;
     text-align: center;
     font-weight: 600;
     letter-spacing: 0.2px;
 }
 
 .detail-table tbody td {
-    height: 4.9mm;
-    max-height: 4.9mm;
-    padding-top: 0.1mm;
-    padding-bottom: 0.1mm;
-    font-size: 6.8px;
-    line-height: 1;
+    height: 6.7mm;
+    padding: 0.35mm 0.55mm;
+    font-size: 7.2px;
+    line-height: 1.1;
 }
 
-.detail-table th {
+.detail-table .num {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.detail-table .center {
     text-align: center;
-    height: 7mm;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    line-height: 1.15;
 }
 
 .detail-table .small {
-    font-size: 6.2px;
-    line-height: 1;
+    font-size: 6.5px;
+    line-height: 1.05;
 }
 
 .detail-table .product-cell {
-    font-size: 6.8px;
-    line-height: 1;
+    font-size: 7.2px;
+    line-height: 1.1;
     word-break: break-word;
 }
 
@@ -753,16 +752,16 @@ const InvoicePdfPreviewModal: React.FC<{
 
                     <table className="summary-table">
                         <colgroup>
-                            <col style={{ width: '11.5%' }} />
-                            <col style={{ width: '11.5%' }} />
-                            <col style={{ width: '11.5%' }} />
-                            <col style={{ width: '10.5%' }} />
-                            <col style={{ width: '12%' }} />
-                            <col style={{ width: '10.5%' }} />
-                            <col style={{ width: '12%' }} />
-                            <col style={{ width: '10.25%' }} />
-                            <col style={{ width: '10.25%' }} />
-                        </colgroup>
+    <col style={{ width: '12%' }} />
+    <col style={{ width: '12%' }} />
+    <col style={{ width: '11%' }} />
+    <col style={{ width: '10%' }} />
+    <col style={{ width: '12%' }} />
+    <col style={{ width: '10%' }} />
+    <col style={{ width: '12%' }} />
+    <col style={{ width: '10.5%' }} />
+    <col style={{ width: '10.5%' }} />
+</colgroup>
                         <thead>
                             <tr>
                                 <th>10％対象</th>
@@ -793,16 +792,16 @@ const InvoicePdfPreviewModal: React.FC<{
 
                     <table className="detail-table">
                         <colgroup>
-                            <col style={{ width: '9.5%' }} />
-<col style={{ width: '2.8%' }} />
-<col style={{ width: '36.7%' }} />
-<col style={{ width: '8.5%' }} />
-<col style={{ width: '4.8%' }} />
-<col style={{ width: '8%' }} />
-<col style={{ width: '11.5%' }} />
-<col style={{ width: '9.2%' }} />
-<col style={{ width: '9%' }} />
-                        </colgroup>
+    <col style={{ width: '9.5%' }} />
+    <col style={{ width: '2.8%' }} />
+    <col style={{ width: '36.2%' }} />
+    <col style={{ width: '8.5%' }} />
+    <col style={{ width: '4.8%' }} />
+    <col style={{ width: '8%' }} />
+    <col style={{ width: '11.7%' }} />
+    <col style={{ width: '9.5%' }} />
+    <col style={{ width: '9%' }} />
+</colgroup>
                         <thead>
                             <tr>
                                 <th>月日</th>
