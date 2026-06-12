@@ -393,7 +393,7 @@ const InvoicePdfPreviewModal: React.FC<{
     const invoiceDate = invoice.create_date || new Date().toISOString();
     const invoiceMonthDay = formatJapaneseMonthDay(invoice.delivery_date || invoice.create_date);
     const salesUserName = salesUser?.name || project?.sales_user_code || '';
-    const maxRows = 20;
+    const maxRows = 22;
     const taxRowCount = 1;
     const spacerRowCount = 1;
     const blankRows = Math.max(0, maxRows - details.length - taxRowCount - spacerRowCount);
@@ -599,15 +599,15 @@ const InvoicePdfPreviewModal: React.FC<{
 
                 .detail-table {
     margin-top: 6mm;
-    font-size: 8.5px;
+    font-size: 8px;
 }
 
 .detail-table th,
 .detail-table td {
     border: 1px solid #111;
     vertical-align: middle;
-    padding: 0.6mm 0.8mm;
-    height: 6.4mm;
+    padding: 0.4mm 0.7mm;
+    height: 5.8mm;
     line-height: 1.15;
 }
 
