@@ -690,28 +690,42 @@ const InvoicePdfPreviewModal: React.FC<{
                                 </div>
 
                                 <div
-                                    className="invoice-field"
-                                    style={fieldStyle({
-                                        x: 18,
-                                        y: 31,
-                                        fontSize: 11,
-                                        width: 90,
-                                    })}
-                                >
-                                    {[customer?.address_1, customer?.address_2].filter(Boolean).join(' ')}
-                                </div>
+    className="invoice-field"
+    style={fieldStyle({
+        x: 18,
+        y: 31,
+        fontSize: 11,
+        width: 90,
+    })}
+>
+    {customer?.address_1 || ''}
+</div>
+
+{customer?.address_2 && (
+    <div
+        className="invoice-field"
+        style={fieldStyle({
+            x: 18,
+            y: 36,
+            fontSize: 11,
+            width: 90,
+        })}
+    >
+        {customer.address_2}
+    </div>
+)}
 
                                 <div
-                                    className="invoice-field"
-                                    style={fieldStyle({
-                                        x: 18,
-                                        y: 38.5,
-                                        fontSize: 11,
-                                        width: 90,
-                                    })}
-                                >
-                                    {customer?.customer_name ? `${customer.customer_name} 御中` : ''}
-                                </div>
+    className="invoice-field"
+    style={fieldStyle({
+        x: 18,
+        y: customer?.address_2 ? 43.5 : 38.5,
+        fontSize: 11,
+        width: 90,
+    })}
+>
+    {customer?.customer_name ? `${customer.customer_name} 御中` : ''}
+</div>
 
                                 {/* 右上可変項目 */}
                                 <div
