@@ -624,9 +624,9 @@ const InvoicePdfPreviewModal: React.FC<{
                     font-weight: 400;
                 }
 
-                .invoice-field.customer-name {
+                invoice-field.customer-address {
                     white-space: normal;
-                    line-height: 1.25;
+                    line-height: 1.2;
                     word-break: break-all;
                     overflow: hidden;
                 }
@@ -692,25 +692,25 @@ const InvoicePdfPreviewModal: React.FC<{
                                 />
 
                                 {/* 宛先 */}
-                                <div
-    className="invoice-field customer-name"
+<div
+    className="invoice-field"
     style={fieldStyle({
         x: 18,
-        y: customer?.address_2 ? 43.5 : 38.5,
+        y: 26,
         fontSize: 11,
-        width: 72,
+        width: 80,
     })}
 >
-    {customer?.customer_name ? `${customer.customer_name} 御中` : ''}
+    {customer?.post_no ? `〒${customer.post_no}` : ''}
 </div>
 
-                                <div
-    className="invoice-field"
+<div
+    className="invoice-field customer-address"
     style={fieldStyle({
         x: 18,
         y: 31,
         fontSize: 11,
-        width: 90,
+        width: 72,
     })}
 >
     {customer?.address_1 || ''}
@@ -718,25 +718,25 @@ const InvoicePdfPreviewModal: React.FC<{
 
 {customer?.address_2 && (
     <div
-        className="invoice-field"
+        className="invoice-field customer-address"
         style={fieldStyle({
             x: 18,
             y: 36,
             fontSize: 11,
-            width: 90,
+            width: 72,
         })}
     >
         {customer.address_2}
     </div>
 )}
 
-                                <div
-    className="invoice-field"
+<div
+    className="invoice-field customer-name"
     style={fieldStyle({
         x: 18,
         y: customer?.address_2 ? 43.5 : 38.5,
         fontSize: 11,
-        width: 90,
+        width: 72,
     })}
 >
     {customer?.customer_name ? `${customer.customer_name} 御中` : ''}
