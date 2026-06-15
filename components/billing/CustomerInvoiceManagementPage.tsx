@@ -394,12 +394,16 @@ const CustomerInvoiceManagementPage: React.FC = () => {
                 .select(
                     'row_uuid, invoice_id, order_id, project_id, project_uuid, customer_uuid, delivery_date, specification, subtotal, consumption, total, note, pattern_name, status, create_date',
                 )
-                .order('delivery_date', { ascending: false, nullsFirst: false })
-                .order('create_date', { ascending: false, nullsFirst: false })
-                .limit(2000);
+                .order('create_date', { ascending: false })
+.limit(2000);
 
-            if (dateFrom) query = query.gte('delivery_date', dateFrom);
-            if (dateTo) query = query.lte('delivery_date', dateTo);
+if (dateFrom) {
+    query = query.gte('create_date', `${dateFrom}T00:00:00`);
+}
+
+if (dateTo) {
+    query = query.lte('create_date', `${dateTo}T23:59:59`);
+}
 
             const { data: invoiceData, error: invoicesError } = await query;
 
@@ -775,11 +779,11 @@ const CustomerInvoiceManagementPage: React.FC = () => {
                     </div>
 
                     <div className="lg:col-span-2">
-                        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={`${inputClass} w-full`} title="納品日 From" />
+                        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={`${inputClass} w-full`} title="請求作成日 From" />
                     </div>
 
                     <div className="lg:col-span-2">
-                        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={`${inputClass} w-full`} title="納品日 To" />
+                        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={`${inputClass} w-full`} title="請求作成日 To" />
                     </div>
 
                     <div className="lg:col-span-1">
