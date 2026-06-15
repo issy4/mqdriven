@@ -231,6 +231,7 @@ import SalesPipelinePage from './components/sales/SalesPipelinePage';
 import ProjectManagementPage from './components/projects/ProjectManagementPage';
 import SettingsPage from './components/SettingsPage';
 import LegacyInvoiceBillingPage from './components/billing/LegacyInvoiceBillingPage';
+import CustomerInvoiceManagementPage from './components/billing/CustomerInvoiceManagementPage';
 import PaymentManagement from './components/accounting/PaymentManagement';
 import LaborCostManagement from './components/accounting/LaborCostManagement';
 import TrialBalancePage from './components/accounting/TrialBalancePage';
