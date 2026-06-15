@@ -231,6 +231,7 @@ import SalesPipelinePage from './components/sales/SalesPipelinePage';
 import ProjectManagementPage from './components/projects/ProjectManagementPage';
 import SettingsPage from './components/SettingsPage';
 import LegacyInvoiceBillingPage from './components/billing/LegacyInvoiceBillingPage';
+import CustomerInvoiceManagementPage from './components/billing/CustomerInvoiceManagementPage';
 import PaymentManagement from './components/accounting/PaymentManagement';
 import LaborCostManagement from './components/accounting/LaborCostManagement';
 import TrialBalancePage from './components/accounting/TrialBalancePage';
@@ -1772,8 +1773,9 @@ const App: React.FC = () => {
             case 'sales_pipeline':
                 return <SalesPipelinePage jobs={jobs || []} onUpdateJob={handleUpdateJob} onCardClick={(job) => { setSelectedJob(job); setJobDetailModalOpen(true); }} />;
             case 'sales_billing':
-            case 'legacy_billing':
                 return <LegacyInvoiceBillingPage />;
+            case 'legacy_billing':
+                return <CustomerInvoiceManagementPage />;
             case 'project_management':
                 return <ProjectManagementPage projects={projects || []} onRefresh={loadAllData} isLoading={isLoading} />;
             case 'purchasing_payments':
