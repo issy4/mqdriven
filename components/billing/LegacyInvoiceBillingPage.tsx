@@ -660,8 +660,8 @@ const InvoicePdfPreviewModal: React.FC<{
                     const totalPages = pageDetailsList.length;
 
                     const taxRowIndex = pageDetails.length;
-                    const taxRowY = DETAIL_START_Y + DETAIL_ROW_HEIGHT * taxRowIndex;
-                    const targetAmountY = taxRowY + 3.9;
+                    const taxRowY = DETAIL_START_Y + DETAIL_ROW_HEIGHT * taxRowIndex - 1.5;
+                    const targetAmountY = taxRowY + 3.6;
                     const blankY = taxRowY + DETAIL_ROW_HEIGHT;
 
                     return (
