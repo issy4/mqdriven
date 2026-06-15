@@ -606,6 +606,14 @@ const InvoicePdfPreviewModal: React.FC<{
                     pointer-events: none;
                 }
 
+                .invoice-field.customer-name {
+                    white-space: normal;
+                    line-height: 1.25;
+                    word-break: break-all;
+                    overflow: hidden;
+                    max-height: 10mm;
+                }
+
                 .invoice-field {
                     position: absolute;
                     z-index: 1;
@@ -614,6 +622,13 @@ const InvoicePdfPreviewModal: React.FC<{
                     white-space: nowrap;
                     box-sizing: border-box;
                     font-weight: 400;
+                }
+
+                .invoice-field.customer-name {
+                    white-space: normal;
+                    line-height: 1.25;
+                    word-break: break-all;
+                    overflow: hidden;
                 }
 
                 .invoice-field.multiline {
@@ -678,16 +693,16 @@ const InvoicePdfPreviewModal: React.FC<{
 
                                 {/* 宛先 */}
                                 <div
-                                    className="invoice-field"
-                                    style={fieldStyle({
-                                        x: 18,
-                                        y: 26,
-                                        fontSize: 11,
-                                        width: 80,
-                                    })}
-                                >
-                                    {customer?.post_no ? `〒${customer.post_no}` : ''}
-                                </div>
+    className="invoice-field customer-name"
+    style={fieldStyle({
+        x: 18,
+        y: customer?.address_2 ? 43.5 : 38.5,
+        fontSize: 11,
+        width: 72,
+    })}
+>
+    {customer?.customer_name ? `${customer.customer_name} 御中` : ''}
+</div>
 
                                 <div
     className="invoice-field"
