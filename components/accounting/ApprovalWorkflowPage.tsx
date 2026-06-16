@@ -274,26 +274,42 @@ const ApprovalWorkflowPage: React.FC<ApprovalWorkflowPageProps> = ({
     };
 
     const handleDeleteDraft = async (application: ApplicationWithDetails) => {
-        if (!currentUser) return;
-        if (application.status !== 'draft') return;
-        if (application.applicant_id !== currentUser.id) {
-            addToast('自分の下書きのみ削除できます。', 'error');
-            return;
-        }
-        const confirmed =
-            typeof window === 'undefined'
-                ? true
-                : window.confirm('この下書きを完全に削除しますか？この操作は元に戻せません。');
-        if (!confirmed) return;
+    if (!currentUser) return;
 
-        try {
-            await deleteApplicationDraft(application.id);
-            addToast('下書きを削除しました。', 'success');
-            await fetchListData();
-        } catch (err: any) {
-            addToast(`エラー: ${err.message || '下書きの削除に失敗しました。'}`, 'error');
-        }
-    };
+    if (application.status !== 'draft') return;
+
+    const applicantId =
+        application.applicantId ||
+        (application as any).applicant_id;
+
+    if (applicantId !== currentUser.id) {
+        console.log('[delete draft blocked]', {
+            applicantId,
+            applicantIdCamel: application.applicantId,
+            applicantIdSnake: (application as any).applicant_id,
+            currentUserId: currentUser.id,
+            application,
+        });
+
+        addToast('自分の下書きのみ削除できます。', 'error');
+        return;
+    }
+
+    const confirmed =
+        typeof window === 'undefined'
+            ? true
+            : window.confirm('この下書きを完全に削除しますか？この操作は元に戻せません。');
+
+    if (!confirmed) return;
+
+    try {
+        await deleteApplicationDraft(application.id);
+        addToast('下書きを削除しました。', 'success');
+        await fetchListData();
+    } catch (err: any) {
+        addToast(`エラー: ${err.message || '下書きの削除に失敗しました。'}`, 'error');
+    }
+};
 
     const handleCreateJournal = async (application: ApplicationWithDetails) => {
         if (!currentUser) {
