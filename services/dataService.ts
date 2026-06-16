@@ -2971,16 +2971,21 @@ export const saveApplicationDraft = async (appData: any, applicantId: string): P
         throw new Error('applicationCodeId is required to save drafts.');
     }
 
+    if (!applicantId) {
+        throw new Error('applicantId is required to save drafts.');
+    }
+
     const supabase = getSupabase();
     const existingDraftId = await findExistingDraftId(appData.applicationCodeId, applicantId);
     const now = new Date().toISOString();
+
     const sanitizedApprovalRouteId =
         typeof appData.approvalRouteId === 'string' && appData.approvalRouteId.trim().length > 0
             ? appData.approvalRouteId
             : null;
 
     const draftUpdate = {
-        form_data: appData.formData,
+        form_data: appData.formData ?? {},
         approval_route_id: sanitizedApprovalRouteId,
         updated_at: now,
     };
@@ -2993,22 +2998,34 @@ export const saveApplicationDraft = async (appData: any, applicantId: string): P
             .select()
             .single();
 
-        ensureSupabaseSuccess(error, 'Failed to update draft');
+        if (error) {
+            console.error('[saveApplicationDraft] update draft error:', error);
+            throw error;
+        }
+
         return dbApplicationDraftToApplication(data);
     }
 
+    const insertPayload = {
+        application_code_id: appData.applicationCodeId,
+        applicant_id: applicantId,
+        ...draftUpdate,
+        created_at: now,
+    };
+
+    console.log('[saveApplicationDraft] insert payload:', insertPayload);
+
     const { data, error } = await supabase
         .from('application_drafts')
-        .insert({
-            application_code_id: appData.applicationCodeId,
-            applicant_id: applicantId,
-            ...draftUpdate,
-            created_at: now,
-        })
+        .insert(insertPayload)
         .select()
         .single();
 
-    ensureSupabaseSuccess(error, 'Failed to save draft');
+    if (error) {
+        console.error('[saveApplicationDraft] insert draft error:', error);
+        throw error;
+    }
+
     return dbApplicationDraftToApplication(data);
 };
 
