@@ -3013,7 +3013,7 @@ export const saveApplicationDraft = async (appData: any, applicantId: string): P
         created_at: now,
     };
 
-    console.log('[saveApplicationDraft] insert payload:', insertPayload);
+    console.log('[saveApplicationDraft] insertPayload:', insertPayload);
 
     const { data, error } = await supabase
         .from('application_drafts')
