@@ -466,29 +466,29 @@ const TransportExpenseForm: React.FC<TransportExpenseFormProps> = ({ onSuccess, 
     };
 
     const buildSubmissionPayload = () => {
-        const sanitizedDetails = details
-            .filter(d => d.departure || d.arrival)
-            .map(detail => ({
-                travelDate: detail.travelDate,
-                departure: detail.departure,
-                arrival: detail.arrival,
-                transportMode: detail.transportMode,
-                amount: detail.amount,
-            }));
+    const sanitizedDetails = details
+        .filter(d => d.departure || d.arrival)
+        .map(detail => ({
+            travelDate: detail.travelDate,
+            departure: detail.departure,
+            arrival: detail.arrival,
+            transportMode: detail.transportMode,
+            amount: detail.amount,
+        }));
 
-        return {
-            applicationCodeId,
-            formData: attachResubmissionMeta(
-                {
-                    details: sanitizedDetails,
-                    notes,
-                    totalAmount,
-                },
-                resubmissionMeta
-            ),
-            approvalRouteId,
-        };
+    return {
+        applicationCodeId,
+        formData: attachResubmissionMeta(
+            {
+                details: sanitizedDetails,
+                notes,
+                totalAmount,
+            },
+            resubmissionMeta
+        ),
+        approvalRouteId: approvalRouteId && approvalRouteId.trim() ? approvalRouteId : null,
     };
+};
 
     const executeSubmission = async () => {
         if (!currentUser) {
@@ -533,21 +533,33 @@ const TransportExpenseForm: React.FC<TransportExpenseFormProps> = ({ onSuccess, 
     };
 
     const handleSaveDraft = async () => {
-        if (!currentUser) {
-            setError('ユーザー情報が見つかりません。');
-            return;
-        }
+    if (!currentUser) {
+        setError('ユーザー情報が見つかりません。');
+        return;
+    }
 
-        setIsSavingDraft(true);
+    const payload = buildSubmissionPayload();
+
+    console.log('[TransportExpenseForm] currentUser.id:', currentUser.id);
+    console.log('[TransportExpenseForm] payload:', payload);
+
+    setIsSavingDraft(true);
+    setError('');
+
+    try {
+        await saveApplicationDraft(payload, currentUser.id);
         setError('');
-        try {
-            await saveApplicationDraft(buildSubmissionPayload(), currentUser.id);
-        } catch (err: any) {
-            setError('下書きの保存に失敗しました。');
-        } finally {
-            setIsSavingDraft(false);
-        }
-    };
+    } catch (err: any) {
+        console.error('[TransportExpenseForm] save draft failed:', err);
+        setError(
+            err?.message
+                ? `下書きの保存に失敗しました: ${err.message}`
+                : '下書きの保存に失敗しました。'
+        );
+    } finally {
+        setIsSavingDraft(false);
+    }
+};
 
     const clearForm = () => {
         setDetails([createEmptyDetail()]);
