@@ -845,57 +845,70 @@ const renderInvoiceCoverPage = () => {
                 }
 
                 @media print {
-                    html,
-                    body {
-                        margin: 0 !important;
-                        padding: 0 !important;
-                    }
+    html,
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 210mm !important;
+        height: auto !important;
+        overflow: visible !important;
+        background: #fff !important;
+    }
 
-                    body * {
-                        visibility: hidden !important;
-                    }
+    body * {
+        visibility: hidden !important;
+    }
 
-                    .invoice-print-area,
-                    .invoice-print-area * {
-                        visibility: visible !important;
-                    }
+    .invoice-print-area,
+    .invoice-print-area * {
+        visibility: visible !important;
+    }
 
-                    .invoice-print-area {
-                        position: absolute !important;
-                        left: 0 !important;
-                        top: 0 !important;
-                        width: 100% !important;
-                        box-shadow: none !important;
-                    }
+    .invoice-print-area {
+        position: static !important;
+        display: block !important;
+        width: 210mm !important;
+        height: auto !important;
+        margin: 0 auto !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        box-shadow: none !important;
+    }
 
-                    .invoice-preview-toolbar {
-                        display: none !important;
-                    }
+    .invoice-preview-toolbar {
+        display: none !important;
+    }
 
-                    .invoice-template-page {
-                        width: 210mm !important;
-                        height: 297mm !important;
-                        margin: 0 auto !important;
-                        box-shadow: none !important;
-                        overflow: hidden !important;
-                        page-break-after: always;
-                        break-after: page;
-                    }
+    .invoice-template-page {
+        position: relative !important;
+        display: block !important;
+        width: 210mm !important;
+        height: 297mm !important;
+        margin: 0 auto !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        overflow: hidden !important;
+        page-break-after: always !important;
+        break-after: page !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
 
-                    .invoice-template-page:last-child {
-                        page-break-after: auto;
-                        break-after: auto;
-                    }
+    .invoice-template-page:last-child {
+        page-break-after: auto !important;
+        break-after: auto !important;
+    }
 
-                    .invoice-template-inner {
-                        left: 50% !important;
-                        top: 50% !important;
-                        width: 210mm !important;
-                        height: 297mm !important;
-                        transform: translate(-50%, -50%) scale(0.94) !important;
-                        transform-origin: center center !important;
-                    }
-                }
+    .invoice-template-inner {
+        position: absolute !important;
+        left: 50% !important;
+        top: 50% !important;
+        width: 210mm !important;
+        height: 297mm !important;
+        transform: translate(-50%, -50%) scale(0.94) !important;
+        transform-origin: center center !important;
+    }
+}
 
                 .invoice-template-page {
                     position: relative;
