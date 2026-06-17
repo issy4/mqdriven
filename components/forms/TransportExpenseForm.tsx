@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { submitApplication, saveApplicationDraft, clearApplicationDraft } from '../../services/dataService';
 import { extractInvoiceDetails } from '../../services/geminiService';
 import ApprovalRouteSelector from './ApprovalRouteSelector';
-import { Loader, Upload, PlusCircle, Trash2, AlertTriangle } from '../Icons';
+import { Loader, Upload, PlusCircle, Trash2, Copy, AlertTriangle } from '../Icons';
 import { User, ApplicationWithDetails } from '../../types';
 import { useSubmitWithConfirmation } from '../../hooks/useSubmitWithConfirmation';
 import { attachResubmissionMeta, buildResubmissionMeta } from '../../utils/applicationResubmission';
@@ -76,6 +76,24 @@ const TransportExpenseForm: React.FC<TransportExpenseFormProps> = ({ onSuccess, 
     };
 
     const handleRemoveRow = (id: string) => setDetails(prev => prev.filter(item => item.id !== id));
+
+    const handleDuplicateRow = (id: string) => {
+    setDetails(prev => {
+        const targetIndex = prev.findIndex(item => item.id === id);
+        if (targetIndex === -1) return prev;
+
+        const target = prev[targetIndex];
+
+        const duplicated: TransportDetail = {
+            ...target,
+            id: `row_copy_${Date.now()}_${Math.random()}`,
+        };
+
+        const next = [...prev];
+        next.splice(targetIndex + 1, 0, duplicated);
+        return next;
+    });
+};
 
     // Handle paste from clipboard
     const handlePaste = async (e: React.ClipboardEvent) => {
@@ -690,8 +708,15 @@ const TransportExpenseForm: React.FC<TransportExpenseFormProps> = ({ onSuccess, 
                         <table className="w-full text-sm">
                             <thead className="bg-slate-50 dark:bg-slate-700/50">
                                 <tr>
-                                    {['利用日', '出発地', '目的地', '交通手段', '金額(円)'].map(h => <th key={h} className="px-3 py-2 text-left font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">{h}</th>)}
-                                    <th className="p-2 w-12"></th>
+                                    {['利用日', '出発地', '目的地', '交通手段', '金額(円)', '操作'].map(h => (
+    <th
+        key={h}
+        className="px-3 py-2 text-left font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap"
+    >
+        {h}
+    </th>
+))}
+
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -700,15 +725,35 @@ const TransportExpenseForm: React.FC<TransportExpenseFormProps> = ({ onSuccess, 
                                         <td className="p-1"><input type="date" value={item.travelDate} onChange={e => handleDetailChange(item.id, 'travelDate', e.target.value)} className={inputClass} disabled={isDisabled} /></td>
                                         <td className="p-1 min-w-[150px]"><input type="text" placeholder="例: 東京駅" value={item.departure} onChange={e => handleDetailChange(item.id, 'departure', e.target.value)} className={inputClass} disabled={isDisabled} /></td>
                                         <td className="p-1 min-w-[150px]"><input type="text" placeholder="例: 幕張メッセ" value={item.arrival} onChange={e => handleDetailChange(item.id, 'arrival', e.target.value)} className={inputClass} disabled={isDisabled} /></td>
-                                        <td className="p-1 min-w-[120px]">
+                                        <td className="p-1 min-w-[100px]">
                                             <select value={item.transportMode} onChange={e => handleDetailChange(item.id, 'transportMode', e.target.value)} className={inputClass} disabled={isDisabled}>
                                                 {TRANSPORT_MODES.map(mode => <option key={mode} value={mode}>{mode}</option>)}
                                             </select>
                                         </td>
-                                        <td className="p-1 min-w-[120px]"><input type="number" value={item.amount} onChange={e => handleDetailChange(item.id, 'amount', Number(e.target.value))} className={`${inputClass} text-right`} disabled={isDisabled} /></td>
-                                        <td className="text-center p-1">
-                                            <button type="button" onClick={() => handleRemoveRow(item.id)} className="p-1 text-slate-400 hover:text-red-500" disabled={isDisabled}><Trash2 className="w-4 h-4" /></button>
-                                        </td>
+                                        <td className="p-1 min-w-[100px]"><input type="number" value={item.amount} onChange={e => handleDetailChange(item.id, 'amount', Number(e.target.value))} className={`${inputClass} text-right`} disabled={isDisabled} /></td>
+                                        <td className="p-1 min-w-[90px]">
+    <div className="flex items-center justify-center gap-1">
+        <button
+            type="button"
+            onClick={() => handleDuplicateRow(item.id)}
+            className="px-2 py-1 text-xs font-semibold text-blue-600 hover:text-blue-700 border border-blue-200 rounded"
+            disabled={isDisabled}
+            title="この行を複製"
+        >
+            複製
+        </button>
+
+        <button
+            type="button"
+            onClick={() => handleRemoveRow(item.id)}
+            className="px-2 py-1 text-xs font-semibold text-red-600 hover:text-red-700 border border-red-200 rounded"
+            disabled={isDisabled}
+            title="この行を削除"
+        >
+            削除
+        </button>
+    </div>
+</td>
                                     </tr>
                                 ))}
                             </tbody>
