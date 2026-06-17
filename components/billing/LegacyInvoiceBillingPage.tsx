@@ -1389,17 +1389,20 @@ const InvoiceDetailModal: React.FC<{
     };
 
     const handleMarkAsIssued = async () => {
-        const ok = window.confirm(
-            `請求番号 ${invoice.invoice_id || '—'} を「発行済み」として登録します。\n\nこの処理ではPDF生成やメール送信は行いません。よろしいですか？`,
-        );
-        if (!ok) return;
-        setIsMarkingIssued(true);
-        try {
-            await onMarkAsIssued(combined);
-        } finally {
-            setIsMarkingIssued(false);
-        }
-    };
+    const ok = window.confirm(
+        `請求番号 ${invoice.invoice_id || '—'} を発行し、送付待ちに登録します。\n\nこの処理では、発行履歴を作成し、顧客別請求設定に基づいて送付待ちデータを作成します。\n\nよろしいですか？`,
+    );
+
+    if (!ok) return;
+
+    setIsMarkingIssued(true);
+
+    try {
+        await onMarkAsIssued(combined);
+    } finally {
+        setIsMarkingIssued(false);
+    }
+};
 
     const handleMarkAsPendingDelivery = async () => {
         const ok = window.confirm(
@@ -1782,14 +1785,14 @@ const InvoiceDetailModal: React.FC<{
                     {!isIssued && (
                         <button onClick={handleMarkAsIssued} disabled={isMarkingIssued} className="flex items-center gap-2 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400">
                             {isMarkingIssued ? <Loader className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
-                            発行済みとして登録
+                             請求書を発行する
                         </button>
                     )}
 
                     {isIssued && !hasDelivery && (
                         <button onClick={handleMarkAsPendingDelivery} disabled={isMarkingPendingDelivery} className="flex items-center gap-2 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-slate-400">
                             {isMarkingPendingDelivery ? <Loader className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                            送付待ちにする
+                            送付設定を作成する
                         </button>
                     )}
 
@@ -2519,31 +2522,41 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     };
 
     const handleMarkAsIssued = useCallback(
-        async (combined: CombinedInvoice) => {
-            const supabase = getSupabase();
-            const now = new Date().toISOString();
-            const { invoice, customer } = combined;
+    async (combined: CombinedInvoice) => {
+        const supabase = getSupabase();
+        const now = new Date().toISOString();
+        const { invoice, customer } = combined;
 
-            try {
-                if (combined.issue?.id) {
-                    const { error } = await supabase
-                        .from('invoice_issue_records')
-                        .update({
-                            issue_status: 'issued',
-                            issued_at: combined.issue.issued_at || now,
-                            last_issued_at: now,
-                            issue_count: (combined.issue.issue_count || 0) + 1,
-                            customer_code: customer?.customer_code || null,
-                            customer_name: customer?.customer_name || null,
-                            note: '手動で発行済みに登録',
-                        })
-                        .eq('id', combined.issue.id);
-                    if (error) {
-                        logSupabaseError('invoice_issue_records update issued', error);
-                        throw error;
-                    }
-                } else {
-                    const { error } = await supabase.from('invoice_issue_records').insert({
+        try {
+            let issueRecordId = combined.issue?.id || null;
+
+            // 1. 発行履歴を登録・更新
+            if (combined.issue?.id) {
+                const { data, error } = await supabase
+                    .from('invoice_issue_records')
+                    .update({
+                        issue_status: 'issued',
+                        issued_at: combined.issue.issued_at || now,
+                        last_issued_at: now,
+                        issue_count: (combined.issue.issue_count || 0) + 1,
+                        customer_code: customer?.customer_code || null,
+                        customer_name: customer?.customer_name || null,
+                        note: '請求書を発行し、送付待ちに登録',
+                    })
+                    .eq('id', combined.issue.id)
+                    .select('id')
+                    .single();
+
+                if (error) {
+                    logSupabaseError('invoice_issue_records update issued', error);
+                    throw error;
+                }
+
+                issueRecordId = data?.id || combined.issue.id;
+            } else {
+                const { data, error } = await supabase
+                    .from('invoice_issue_records')
+                    .insert({
                         legacy_invoice_id: invoice.row_uuid,
                         invoice_no: invoice.invoice_id,
                         customer_code: customer?.customer_code || null,
@@ -2552,25 +2565,89 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                         issued_at: now,
                         last_issued_at: now,
                         issue_count: 1,
-                        note: '手動で発行済みに登録',
-                    });
-                    if (error) {
-                        logSupabaseError('invoice_issue_records insert issued', error);
-                        throw error;
-                    }
+                        note: '請求書を発行し、送付待ちに登録',
+                    })
+                    .select('id')
+                    .single();
+
+                if (error) {
+                    logSupabaseError('invoice_issue_records insert issued', error);
+                    throw error;
                 }
 
-                setSelected(null);
-                await loadInvoiceData();
-                setActiveTab('issued');
-            } catch (e) {
-                console.error('[LegacyInvoiceBillingPage] failed to mark invoice as issued', e);
-                setError(e instanceof Error ? e.message : '発行済み登録に失敗しました。');
-                throw e;
+                issueRecordId = data?.id || null;
             }
-        },
-        [loadInvoiceData],
-    );
+
+            if (!issueRecordId) {
+                throw new Error('発行履歴IDを取得できませんでした。');
+            }
+
+            // 2. 顧客別請求設定を取得
+            const setting = await fetchBillingSettingForInvoice(combined);
+
+            if (!setting) {
+                throw new Error('この顧客の有効な顧客別設定が見つかりません。先に顧客別設定を登録してください。');
+            }
+
+            const method = setting.delivery_method || 'email';
+
+            if (method === 'email' && !setting.billing_email) {
+                throw new Error('送信方法がメールですが、請求先メールが設定されていません。');
+            }
+
+            const subjectTemplate = setting.email_subject_template || DEFAULT_EMAIL_SUBJECT_TEMPLATE;
+            const bodyTemplate = setting.email_body_template || DEFAULT_EMAIL_BODY_TEMPLATE;
+            const attachmentNameTemplate = setting.attachment_name_template || DEFAULT_ATTACHMENT_NAME_TEMPLATE;
+
+            const deliveryPayload = {
+                legacy_invoice_id: invoice.row_uuid,
+                invoice_no: invoice.invoice_id,
+                issue_record_id: issueRecordId,
+                delivery_method: method,
+                delivery_status: 'pending',
+                to_email: method === 'email' ? setting.billing_email : null,
+                cc_email: method === 'email' ? setting.billing_cc : null,
+                bcc_email: method === 'email' ? setting.billing_bcc : null,
+                subject: method === 'email' ? renderTemplate(subjectTemplate, combined) : null,
+                body: method === 'email' ? renderTemplate(bodyTemplate, combined) : null,
+                attachment_file_name: renderTemplate(attachmentNameTemplate, combined),
+                error_message: null,
+                sent_at: null,
+            };
+
+            // 3. 送付待ちを登録・更新
+            if (combined.delivery?.id) {
+                const { error } = await supabase
+                    .from('invoice_delivery_records')
+                    .update(deliveryPayload)
+                    .eq('id', combined.delivery.id);
+
+                if (error) {
+                    logSupabaseError('invoice_delivery_records update pending', error);
+                    throw error;
+                }
+            } else {
+                const { error } = await supabase
+                    .from('invoice_delivery_records')
+                    .insert(deliveryPayload);
+
+                if (error) {
+                    logSupabaseError('invoice_delivery_records insert pending', error);
+                    throw error;
+                }
+            }
+
+            setSelected(null);
+            await loadInvoiceData();
+            setActiveTab('pending_send');
+        } catch (e) {
+            console.error('[LegacyInvoiceBillingPage] failed to issue invoice and create pending delivery', e);
+            setError(e instanceof Error ? e.message : '請求書の発行・送付待ち登録に失敗しました。');
+            throw e;
+        }
+    },
+    [loadInvoiceData],
+);
 
     const handleMarkAsPendingDelivery = useCallback(
         async (combined: CombinedInvoice) => {
