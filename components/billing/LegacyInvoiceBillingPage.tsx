@@ -599,29 +599,33 @@ const productNameForInvoice =
 </head>
 <body>
     ${printArea.outerHTML}
-    <script>
-        const waitForImages = () => {
-            const images = Array.from(document.images || []);
-            if (images.length === 0) return Promise.resolve();
+<script>
+    const waitForImages = () => {
+        const images = Array.from(document.images || []);
+        if (images.length === 0) return Promise.resolve();
 
-            return Promise.all(
-                images.map((img) => {
-                    if (img.complete) return Promise.resolve();
-                    return new Promise((resolve) => {
-                        img.onload = resolve;
-                        img.onerror = resolve;
-                    });
-                })
-            );
-        };
+        return Promise.all(
+            images.map((img) => {
+                if (img.complete) return Promise.resolve();
+                return new Promise((resolve) => {
+                    img.onload = resolve;
+                    img.onerror = resolve;
+                });
+            })
+        );
+    };
 
-        waitForImages().then(() => {
-            setTimeout(() => {
-                window.focus();
-                window.print();
-            }, 300);
-        });
-    </script>
+    window.onafterprint = () => {
+        window.close();
+    };
+
+    waitForImages().then(() => {
+        setTimeout(() => {
+            window.focus();
+            window.print();
+        }, 300);
+    });
+</script>
 </body>
 </html>
 `;
