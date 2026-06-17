@@ -733,6 +733,10 @@ const productNameForInvoice =
 );
 
 const renderInvoiceCoverPage = () => {
+    const coverTaxRowY = DETAIL_START_Y + DETAIL_ROW_HEIGHT * 1 - 1.5;
+    const coverTargetAmountY = coverTaxRowY + 3.6;
+    const coverBlankY = coverTaxRowY + DETAIL_ROW_HEIGHT;
+
     return renderCommonPage(
         'invoice-cover-page',
         0,
@@ -766,11 +770,48 @@ const renderInvoiceCoverPage = () => {
                 【外 税】
             </div>
 
+            {/* 消費税等：1ページ目に表示 */}
+            <div
+                className="invoice-field"
+                style={fieldStyle({
+                    x: 29.7,
+                    y: coverTaxRowY,
+                    width: 70,
+                    fontSize: 9,
+                })}
+            >
+                【　消　費　税　等　】
+            </div>
+
+            <div
+                className="invoice-field"
+                style={fieldStyle({
+                    x: 29.7,
+                    y: coverTargetAmountY,
+                    width: 70,
+                    fontSize: 9,
+                })}
+            >
+                （対象額　{subtotal.toLocaleString()}円）
+            </div>
+
+            <div
+                className="invoice-field amount"
+                style={rightFieldStyle({
+                    rightX: 184.9,
+                    y: coverTaxRowY,
+                    width: 22,
+                    fontSize: 10,
+                })}
+            >
+                {formatNumber(consumption)}
+            </div>
+
             <div
                 className="invoice-field"
                 style={fieldStyle({
                     x: 88.7,
-                    y: DETAIL_START_Y + DETAIL_ROW_HEIGHT,
+                    y: coverBlankY,
                     width: 45,
                     fontSize: 9,
                     align: 'center',
@@ -781,7 +822,6 @@ const renderInvoiceCoverPage = () => {
         </>,
     );
 };
-
     return (
         <div className="fixed inset-0 bg-slate-950/70 z-[80] overflow-y-auto p-4 print:p-0 print:bg-white">
             <style>{`
@@ -852,7 +892,7 @@ const renderInvoiceCoverPage = () => {
                     color: #111;
                     overflow: hidden;
                     box-sizing: border-box;
-                    font-family: "Yu Gothic", "Meiryo", Arial, sans-serif;
+                    font-family: "MS PGothic", "Yu Gothic", "Meiryo", Arial, sans-serif;
                     box-shadow: 0 20px 50px rgba(15, 23, 42, 0.35);
                 }
 
@@ -1018,58 +1058,6 @@ const renderInvoiceCoverPage = () => {
                     );
                 })}
 
-                {isLastPage && (
-                    <>
-                        <div
-                            className="invoice-field"
-                            style={fieldStyle({
-                                x: 29.7,
-                                y: taxRowY,
-                                width: 70,
-                                fontSize: 9,
-                            })}
-                        >
-                            【　消　費　税　等　】
-                        </div>
-
-                        <div
-                            className="invoice-field"
-                            style={fieldStyle({
-                                x: 29.7,
-                                y: targetAmountY,
-                                width: 70,
-                                fontSize: 9,
-                            })}
-                        >
-                            （対象額　{subtotal.toLocaleString()}円）
-                        </div>
-
-                        <div
-                            className="invoice-field amount"
-                            style={rightFieldStyle({
-                                rightX: 184.9,
-                                y: taxRowY,
-                                width: 22,
-                                fontSize: 10,
-                            })}
-                        >
-                            {formatNumber(consumption)}
-                        </div>
-
-                        <div
-                            className="invoice-field"
-                            style={fieldStyle({
-                                x: 88.7,
-                                y: blankY,
-                                width: 45,
-                                fontSize: 9,
-                                align: 'center',
-                            })}
-                        >
-                            ■　以下余白　■
-                        </div>
-                    </>
-                )}
             </>,
         );
     })}
