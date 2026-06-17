@@ -506,6 +506,20 @@ const productNameForInvoice =
             fontSize,
         });
 
+    const detailProductName = (detail: InvoiceDetailRow): string => {
+    const mediumName = masterName(detail.medium_item);
+    const detailName = detail.detail || '';
+
+    return [mediumName === '—' ? '' : mediumName, detailName]
+        .filter(Boolean)
+        .join('　');
+};
+
+const detailSummaryName = (detail: InvoiceDetailRow): string => {
+    const majorName = masterName(detail.major_item);
+    return majorName === '—' ? '' : majorName;
+};
+
     const handleClickPage = (e: React.MouseEvent<HTMLDivElement>) => {
         // Alt + クリックで座標確認
         if (!e.altKey) return;
@@ -892,7 +906,7 @@ const renderInvoiceCoverPage = () => {
                     color: #111;
                     overflow: hidden;
                     box-sizing: border-box;
-                    font-family: "MS PGothic", "Yu Gothic", "Meiryo", Arial, sans-serif;
+                    font-family: "MS PMincho", "Yu Gothic", "Meiryo", Arial, sans-serif;
                     box-shadow: 0 20px 50px rgba(15, 23, 42, 0.35);
                 }
 
@@ -1012,11 +1026,11 @@ const renderInvoiceCoverPage = () => {
                             </div>
 
                             <div
-                                className="invoice-field product"
-                                style={detailTextStyle(29.7, rowIndex, 78, 10)}
-                            >
-                                {detail.detail || ''}
-                            </div>
+    className="invoice-field product"
+    style={detailTextStyle(29.7, rowIndex, 78, 10)}
+>
+    {detailProductName(detail)}
+</div>
 
                             <div
                                 className="invoice-field amount"
@@ -1047,13 +1061,11 @@ const renderInvoiceCoverPage = () => {
                             </div>
 
                             <div
-                                className="invoice-field"
-                                style={detailTextStyle(187.3, rowIndex, 18, 9)}
-                            >
-                                {masterName(detail.medium_item) === '—'
-                                    ? ''
-                                    : masterName(detail.medium_item)}
-                            </div>
+    className="invoice-field"
+    style={detailTextStyle(187.3, rowIndex, 18, 9)}
+>
+    {detailSummaryName(detail)}
+</div>
                         </React.Fragment>
                     );
                 })}
