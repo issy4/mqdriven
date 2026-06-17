@@ -674,122 +674,190 @@ const generatePdfBlobFromPreview = async (): Promise<Blob> => {
         import('jspdf'),
     ]);
 
-    const workspace = document.createElement('div');
-    workspace.className = 'pdf-render-workspace';
-    workspace.style.position = 'absolute';
-    workspace.style.left = '0';
-    workspace.style.top = '0';
-    workspace.style.width = '210mm';
-    workspace.style.height = 'auto';
-    workspace.style.margin = '0';
-    workspace.style.padding = '0';
-    workspace.style.background = '#fff';
-    workspace.style.zIndex = '-1';
-    workspace.style.pointerEvents = 'none';
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.left = '-10000px';
+    iframe.style.top = '0';
+    iframe.style.width = '210mm';
+    iframe.style.height = '297mm';
+    iframe.style.border = '0';
+    iframe.style.opacity = '0';
+    iframe.style.pointerEvents = 'none';
 
-    const overrideStyle = document.createElement('style');
-    overrideStyle.textContent = `
-    .pdf-render-workspace,
-    .pdf-render-workspace * {
-        box-sizing: border-box;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-    }
+    document.body.appendChild(iframe);
 
-    .pdf-render-workspace .invoice-print-area {
-        width: 210mm !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        background: #fff !important;
-        overflow: visible !important;
-    }
+    const html = `
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <base href="${window.location.origin}" />
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
 
-    .pdf-render-workspace .invoice-template-page {
-        position: relative !important;
-        display: block !important;
-        width: 210mm !important;
-        height: 297mm !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        background: #fff !important;
-        box-shadow: none !important;
-        overflow: hidden !important;
-        font-family: "Yu Gothic", "Meiryo", Arial, sans-serif !important;
-    }
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            background: #fff;
+            width: 210mm;
+            min-height: 297mm;
+            font-family: "MS PMincho", "Yu Gothic", "Meiryo", Arial, sans-serif;
+        }
 
-    .pdf-render-workspace .invoice-template-inner {
-        position: absolute !important;
-        left: 0 !important;
-        top: 0 !important;
-        width: 210mm !important;
-        height: 297mm !important;
-        transform: none !important;
-        transform-origin: top left !important;
-    }
+        * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
 
-    .pdf-render-workspace .invoice-template-bg {
-        position: absolute !important;
-        inset: 0 !important;
-        width: 210mm !important;
-        height: 297mm !important;
-        object-fit: fill !important;
-        z-index: 0 !important;
-    }
+        .invoice-print-area {
+            width: 210mm;
+            margin: 0;
+            padding: 0;
+            background: #fff;
+        }
 
-    .pdf-render-workspace .invoice-field {
-        position: absolute !important;
-        z-index: 1 !important;
-        color: #111 !important;
-        line-height: 1.15 !important;
-        white-space: nowrap !important;
-        box-sizing: border-box !important;
-        font-weight: 400 !important;
-    }
+        .invoice-template-page {
+            position: relative;
+            display: block;
+            width: 210mm;
+            height: 297mm;
+            margin: 0;
+            padding: 0;
+            background: #fff;
+            color: #111;
+            overflow: hidden;
+            font-family: "MS PMincho", "Yu Gothic", "Meiryo", Arial, sans-serif;
+            box-shadow: none;
+            page-break-after: always;
+            break-after: page;
+        }
 
-    .pdf-render-workspace .invoice-field.amount {
-        text-align: right !important;
-        white-space: nowrap !important;
-        font-variant-numeric: tabular-nums !important;
-    }
+        .invoice-template-page:last-child {
+            page-break-after: auto;
+            break-after: auto;
+        }
 
-    .pdf-render-workspace .invoice-field.product {
-        white-space: pre-wrap !important;
-        line-height: 1.12 !important;
-        overflow: hidden !important;
-    }
+        .invoice-template-inner {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 210mm;
+            height: 297mm;
+            transform: none;
+            transform-origin: top left;
+        }
 
-    .pdf-render-workspace .invoice-field.customer-name {
-        white-space: normal !important;
-        line-height: 1.25 !important;
-        word-break: break-all !important;
-        overflow: hidden !important;
-        max-height: 10mm !important;
-    }
+        .invoice-template-bg {
+            position: absolute;
+            inset: 0;
+            width: 210mm;
+            height: 297mm;
+            object-fit: fill;
+            z-index: 0;
+            user-select: none;
+            pointer-events: none;
+        }
 
-    .pdf-render-workspace .invoice-field.customer-address {
-        white-space: normal !important;
-        line-height: 1.2 !important;
-        word-break: break-all !important;
-        overflow: hidden !important;
-    }
+        .invoice-field {
+            position: absolute;
+            z-index: 1;
+            color: #111;
+            line-height: 1.15;
+            white-space: nowrap;
+            box-sizing: border-box;
+            font-weight: 400;
+        }
 
-    .pdf-render-workspace .invoice-field.page-count {
-        text-align: right !important;
-        white-space: nowrap !important;
-    }
+        .invoice-field.customer-name {
+            white-space: normal;
+            line-height: 1.25;
+            word-break: break-all;
+            overflow: hidden;
+            max-height: 10mm;
+        }
+
+        .invoice-field.customer-address {
+            white-space: normal;
+            line-height: 1.2;
+            word-break: break-all;
+            overflow: hidden;
+        }
+
+        .invoice-field.multiline {
+            white-space: pre-wrap;
+            line-height: 1.18;
+        }
+
+        .invoice-field.amount {
+            text-align: right;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .invoice-field.product {
+            white-space: pre-wrap;
+            line-height: 1.12;
+            overflow: hidden;
+        }
+
+        .invoice-field.page-count {
+            text-align: right;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    ${originalPrintArea.outerHTML}
+</body>
+</html>
 `;
 
-    const clonedPrintArea = originalPrintArea.cloneNode(true) as HTMLElement;
-
-    workspace.appendChild(overrideStyle);
-    workspace.appendChild(clonedPrintArea);
-    document.body.appendChild(workspace);
-
     try {
-        await waitForImages(workspace);
+        const doc = iframe.contentDocument;
+
+        if (!doc) {
+            throw new Error('PDF生成用iframeを作成できませんでした。');
+        }
+
+        doc.open();
+        doc.write(html);
+        doc.close();
+
+        await new Promise<void>((resolve) => {
+            iframe.onload = () => resolve();
+            setTimeout(resolve, 500);
+        });
+
+        const iframeDoc = iframe.contentDocument;
+
+        if (!iframeDoc) {
+            throw new Error('PDF生成用iframeの内容を取得できませんでした。');
+        }
+
+        const images = Array.from(iframeDoc.querySelectorAll('img'));
+
+        await Promise.all(
+            images.map((img) => {
+                if (img.complete) return Promise.resolve();
+
+                return new Promise<void>((resolve) => {
+                    img.onload = () => resolve();
+                    img.onerror = () => resolve();
+                });
+            }),
+        );
+
+        if ((iframeDoc as any).fonts?.ready) {
+            await (iframeDoc as any).fonts.ready;
+        }
 
         const pages = Array.from(
-            workspace.querySelectorAll('.invoice-template-page'),
+            iframeDoc.querySelectorAll('.invoice-template-page'),
         ) as HTMLElement[];
 
         if (pages.length === 0) {
@@ -807,17 +875,19 @@ const generatePdfBlobFromPreview = async (): Promise<Blob> => {
             const page = pages[i];
 
             const canvas = await html2canvas(page, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: '#ffffff',
-    logging: false,
-    scrollX: 0,
-    scrollY: 0,
-    windowWidth: page.scrollWidth,
-    windowHeight: page.scrollHeight,
-    width: page.offsetWidth,
-    height: page.offsetHeight,
-});
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+                scrollX: 0,
+                scrollY: 0,
+                x: 0,
+                y: 0,
+                width: page.offsetWidth,
+                height: page.offsetHeight,
+                windowWidth: page.offsetWidth,
+                windowHeight: page.offsetHeight,
+            });
 
             const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
@@ -830,7 +900,7 @@ const generatePdfBlobFromPreview = async (): Promise<Blob> => {
 
         return pdf.output('blob');
     } finally {
-        document.body.removeChild(workspace);
+        document.body.removeChild(iframe);
     }
 };
 
