@@ -79,40 +79,62 @@ const TransportExpenseForm: React.FC<TransportExpenseFormProps> = ({ onSuccess, 
 
     // Handle paste from clipboard
     const handlePaste = async (e: React.ClipboardEvent) => {
-        e.preventDefault();
-        const text = e.clipboardData.getData('text');
-        if (!text) return;
+    const text = e.clipboardData.getData('text');
+    if (!text) return;
 
-        try {
-            const lines = text.split('\n').filter(line => line.trim());
-            const newDetails: TransportDetail[] = [];
+    const target = e.target as HTMLElement;
+    const tagName = target.tagName?.toLowerCase();
 
-            // Skip header row if exists - more robust detection for clipboard
-            let startIndex = 0;
-            if (lines.length > 0) {
-                const firstLine = lines[0].toLowerCase();
-                if (
-                    firstLine.includes('利用日') ||
-                    firstLine.includes('日付') ||
-                    firstLine.includes('travel') ||
-                    firstLine.includes('出発地') ||
-                    firstLine.includes('目的地') ||
-                    firstLine.includes('交通手段') ||
-                    firstLine.includes('金額') ||
-                    firstLine.includes('date') ||
-                    firstLine.includes('departure') ||
-                    firstLine.includes('arrival')
-                ) {
-                    startIndex = 1;
-                    console.log('Header row detected and skipped in clipboard:', lines[0]);
-                }
+    const isInputPaste =
+        tagName === 'input' ||
+        tagName === 'textarea' ||
+        tagName === 'select';
+
+    const isBulkPaste =
+        text.includes('\t') ||
+        text.includes('\n') ||
+        text.includes(',');
+
+    if (isInputPaste && !isBulkPaste) {
+        return;
+    }
+
+    e.preventDefault();
+
+    try {
+        const lines = text.split(/\r?\n/).filter(line => line.trim());
+        const newDetails: TransportDetail[] = [];
+
+        let startIndex = 0;
+        if (lines.length > 0) {
+            const firstLine = lines[0].toLowerCase();
+            if (
+                firstLine.includes('利用日') ||
+                firstLine.includes('日付') ||
+                firstLine.includes('travel') ||
+                firstLine.includes('出発地') ||
+                firstLine.includes('目的地') ||
+                firstLine.includes('交通手段') ||
+                firstLine.includes('金額') ||
+                firstLine.includes('date') ||
+                firstLine.includes('departure') ||
+                firstLine.includes('arrival')
+            ) {
+                startIndex = 1;
             }
+        }
 
-            for (let i = startIndex; i < lines.length; i++) {
-                const line = lines[i];
-                const parts = line.split('\t').map(p => p.trim());
-                if (parts.length >= 5) {
-                    let [date, departure, arrival, transport, amount] = parts;
+        for (let i = startIndex; i < lines.length; i++) {
+            const line = lines[i];
+
+            const parts = line.includes('\t')
+                ? line.split('\t').map(p => p.trim().replace(/^"|"$/g, ''))
+                : line.split(',').map(p => p.trim().replace(/^"|"$/g, ''));
+
+            if (parts.length >= 5) {
+                let [date, departure, arrival, transport, amount] = parts;
+
+                // ここから下は既存のdate変換処理をそのまま使用
 
                     // Clean up date field
                     if (date) {
