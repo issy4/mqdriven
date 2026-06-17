@@ -676,27 +676,108 @@ const generatePdfBlobFromPreview = async (): Promise<Blob> => {
 
     const workspace = document.createElement('div');
     workspace.className = 'pdf-render-workspace';
-    workspace.style.position = 'fixed';
-    workspace.style.left = '-10000px';
+    workspace.style.position = 'absolute';
+    workspace.style.left = '0';
     workspace.style.top = '0';
     workspace.style.width = '210mm';
+    workspace.style.height = 'auto';
+    workspace.style.margin = '0';
+    workspace.style.padding = '0';
     workspace.style.background = '#fff';
     workspace.style.zIndex = '-1';
+    workspace.style.pointerEvents = 'none';
 
     const overrideStyle = document.createElement('style');
     overrideStyle.textContent = `
-        .pdf-render-workspace .invoice-template-page {
-            margin: 0 !important;
-            box-shadow: none !important;
-        }
+    .pdf-render-workspace,
+    .pdf-render-workspace * {
+        box-sizing: border-box;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
 
-        .pdf-render-workspace .invoice-template-inner {
-            left: 0 !important;
-            top: 0 !important;
-            transform: none !important;
-            transform-origin: top left !important;
-        }
-    `;
+    .pdf-render-workspace .invoice-print-area {
+        width: 210mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+        overflow: visible !important;
+    }
+
+    .pdf-render-workspace .invoice-template-page {
+        position: relative !important;
+        display: block !important;
+        width: 210mm !important;
+        height: 297mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+        box-shadow: none !important;
+        overflow: hidden !important;
+        font-family: "Yu Gothic", "Meiryo", Arial, sans-serif !important;
+    }
+
+    .pdf-render-workspace .invoice-template-inner {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 210mm !important;
+        height: 297mm !important;
+        transform: none !important;
+        transform-origin: top left !important;
+    }
+
+    .pdf-render-workspace .invoice-template-bg {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 210mm !important;
+        height: 297mm !important;
+        object-fit: fill !important;
+        z-index: 0 !important;
+    }
+
+    .pdf-render-workspace .invoice-field {
+        position: absolute !important;
+        z-index: 1 !important;
+        color: #111 !important;
+        line-height: 1.15 !important;
+        white-space: nowrap !important;
+        box-sizing: border-box !important;
+        font-weight: 400 !important;
+    }
+
+    .pdf-render-workspace .invoice-field.amount {
+        text-align: right !important;
+        white-space: nowrap !important;
+        font-variant-numeric: tabular-nums !important;
+    }
+
+    .pdf-render-workspace .invoice-field.product {
+        white-space: pre-wrap !important;
+        line-height: 1.12 !important;
+        overflow: hidden !important;
+    }
+
+    .pdf-render-workspace .invoice-field.customer-name {
+        white-space: normal !important;
+        line-height: 1.25 !important;
+        word-break: break-all !important;
+        overflow: hidden !important;
+        max-height: 10mm !important;
+    }
+
+    .pdf-render-workspace .invoice-field.customer-address {
+        white-space: normal !important;
+        line-height: 1.2 !important;
+        word-break: break-all !important;
+        overflow: hidden !important;
+    }
+
+    .pdf-render-workspace .invoice-field.page-count {
+        text-align: right !important;
+        white-space: nowrap !important;
+    }
+`;
 
     const clonedPrintArea = originalPrintArea.cloneNode(true) as HTMLElement;
 
@@ -726,11 +807,17 @@ const generatePdfBlobFromPreview = async (): Promise<Blob> => {
             const page = pages[i];
 
             const canvas = await html2canvas(page, {
-                scale: 2,
-                useCORS: true,
-                backgroundColor: '#ffffff',
-                logging: false,
-            });
+    scale: 2,
+    useCORS: true,
+    backgroundColor: '#ffffff',
+    logging: false,
+    scrollX: 0,
+    scrollY: 0,
+    windowWidth: page.scrollWidth,
+    windowHeight: page.scrollHeight,
+    width: page.offsetWidth,
+    height: page.offsetHeight,
+});
 
             const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
