@@ -438,18 +438,204 @@ const productNameForInvoice =
     '請求金額';
 
     const printInvoice = () => {
-        const originalTitle = document.title;
-        const nextTitle = sanitizeFileName(
-            `請求書_${invoice.invoice_id || 'no'}_${customer?.customer_name || 'customer'}`,
-        );
+    const printArea = document.querySelector('.invoice-print-area');
 
-        document.title = nextTitle;
-        window.print();
+    if (!printArea) {
+        window.alert('印刷対象が見つかりません。');
+        return;
+    }
 
-        window.setTimeout(() => {
-            document.title = originalTitle;
-        }, 1000);
-    };
+    const originalTitle = document.title;
+    const nextTitle = sanitizeFileName(
+        `請求書_${invoice.invoice_id || 'no'}_${customer?.customer_name || 'customer'}`,
+    );
+
+    const printWindow = window.open('', '_blank', 'width=1000,height=1200');
+
+    if (!printWindow) {
+        window.alert('印刷ウィンドウを開けませんでした。ポップアップブロックを確認してください。');
+        return;
+    }
+
+    const html = `
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <base href="${window.location.origin}" />
+    <title>${nextTitle}</title>
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            background: #fff;
+            width: 210mm;
+            min-height: 297mm;
+            font-family: "Yu Gothic", "Meiryo", Arial, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .invoice-print-area {
+            width: 210mm;
+            margin: 0 auto;
+            padding: 0;
+            background: #fff;
+        }
+
+        .invoice-template-page {
+            position: relative;
+            display: block;
+            width: 210mm;
+            height: 297mm;
+            margin: 0;
+            padding: 0;
+            background: #fff;
+            color: #111;
+            overflow: hidden;
+            page-break-after: always;
+            break-after: page;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            font-family: "Yu Gothic", "Meiryo", Arial, sans-serif;
+        }
+
+        .invoice-template-page:last-child {
+            page-break-after: auto;
+            break-after: auto;
+        }
+
+        .invoice-template-inner {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 210mm;
+            height: 297mm;
+            transform: translate(-50%, -50%) scale(0.94);
+            transform-origin: center center;
+        }
+
+        .invoice-template-bg {
+            position: absolute;
+            inset: 0;
+            width: 210mm;
+            height: 297mm;
+            object-fit: fill;
+            z-index: 0;
+            user-select: none;
+            pointer-events: none;
+        }
+
+        .invoice-field {
+            position: absolute;
+            z-index: 1;
+            color: #111;
+            line-height: 1.15;
+            white-space: nowrap;
+            box-sizing: border-box;
+            font-weight: 400;
+        }
+
+        .invoice-field.customer-name {
+            white-space: normal;
+            line-height: 1.25;
+            word-break: break-all;
+            overflow: hidden;
+            max-height: 10mm;
+        }
+
+        .invoice-field.customer-address {
+            white-space: normal;
+            line-height: 1.2;
+            word-break: break-all;
+            overflow: hidden;
+        }
+
+        .invoice-field.multiline {
+            white-space: pre-wrap;
+            line-height: 1.18;
+        }
+
+        .invoice-field.amount {
+            text-align: right;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .invoice-field.product {
+            white-space: pre-wrap;
+            line-height: 1.12;
+            overflow: hidden;
+        }
+
+        .invoice-field.page-count {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        @media print {
+            html,
+            body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #fff !important;
+            }
+
+            .invoice-template-page {
+                box-shadow: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    ${printArea.outerHTML}
+    <script>
+        const waitForImages = () => {
+            const images = Array.from(document.images || []);
+            if (images.length === 0) return Promise.resolve();
+
+            return Promise.all(
+                images.map((img) => {
+                    if (img.complete) return Promise.resolve();
+                    return new Promise((resolve) => {
+                        img.onload = resolve;
+                        img.onerror = resolve;
+                    });
+                })
+            );
+        };
+
+        waitForImages().then(() => {
+            setTimeout(() => {
+                window.focus();
+                window.print();
+            }, 300);
+        });
+    </script>
+</body>
+</html>
+`;
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+
+    document.title = nextTitle;
+
+    window.setTimeout(() => {
+        document.title = originalTitle;
+    }, 1000);
+};
 
     const fieldStyle = (pos: {
         x: number;
