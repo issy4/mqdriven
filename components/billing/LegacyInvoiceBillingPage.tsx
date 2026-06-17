@@ -517,12 +517,12 @@ const productNameForInvoice =
 
         .invoice-template-inner {
             position: absolute;
-            left: 50%;
-            top: 50%;
+            left: 0%;
+            top: 0%;
             width: 210mm;
             height: 297mm;
-            transform: translate(-50%, -50%) scale(0.94);
-            transform-origin: center center;
+            transform: none;
+            transform-origin: top left;
         }
 
         .invoice-template-bg {
