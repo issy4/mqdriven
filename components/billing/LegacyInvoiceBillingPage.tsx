@@ -758,6 +758,18 @@ const InvoicePdfPreviewModal: React.FC<{
                                 <div
                                     className="invoice-field"
                                     style={fieldStyle({
+                                        x: 148,
+                                        y: 38,
+                                        fontSize: 8,
+                                        width: 40,
+                                    })}
+                                >
+                                    請求書番号 {invoice.invoice_id || ''}
+                                </div>
+
+                                <div
+                                    className="invoice-field"
+                                    style={fieldStyle({
                                         x: 108.5,
                                         y: 47.5,
                                         fontSize: 8,
