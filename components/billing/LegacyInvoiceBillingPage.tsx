@@ -764,53 +764,66 @@ const generatePdfBlobFromPreview = async (): Promise<Blob> => {
         }
 
         .invoice-field {
-            position: absolute;
-            z-index: 1;
-            color: #111;
-            line-height: 1.15;
-            white-space: nowrap;
-            box-sizing: border-box;
-            font-weight: 400;
-/* html2canvas PDF保存用の文字位置補正 */
-            transform: translateY(-2.2mm);
-        }
+    position: absolute;
+    z-index: 1;
+    color: #111;
+    line-height: 1.25;
+    white-space: nowrap;
+    box-sizing: border-box;
+    font-weight: 400;
+    overflow: visible;
 
-        .invoice-field.customer-name {
-            white-space: normal;
-            line-height: 1.25;
-            word-break: break-all;
-            overflow: hidden;
-            max-height: 10mm;
-        }
+    /* html2canvas PDF保存用の文字位置補正 */
+    transform: translateY(-2.2mm);
+}
 
-        .invoice-field.customer-address {
-            white-space: normal;
-            line-height: 1.2;
-            word-break: break-all;
-            overflow: hidden;
-        }
+.invoice-field.customer-address {
+    white-space: pre-line;
+    line-height: 1.35;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    overflow: visible;
+}
 
-        .invoice-field.multiline {
-            white-space: pre-wrap;
-            line-height: 1.18;
-        }
+.invoice-field.customer-name {
+    white-space: normal;
+    line-height: 1.35;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    overflow: visible;
+    max-height: none;
+}
 
-        .invoice-field.amount {
-            text-align: right;
-            white-space: nowrap;
-            font-variant-numeric: tabular-nums;
-        }
+.invoice-field.compact-meta {
+    line-height: 1.35;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: visible;
+}
 
-        .invoice-field.product {
-            white-space: pre-wrap;
-            line-height: 1.12;
-            overflow: hidden;
-        }
+.invoice-field.multiline {
+    white-space: pre-wrap;
+    line-height: 1.25;
+}
 
-        .invoice-field.page-count {
-            text-align: right;
-            white-space: nowrap;
-        }
+.invoice-field.amount {
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.invoice-field.product {
+    white-space: normal;
+    line-height: 1.22;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    overflow: visible;
+}
+
+.invoice-field.page-count {
+    text-align: right;
+    white-space: nowrap;
+}
     </style>
 </head>
 <body>
@@ -992,18 +1005,32 @@ const handleSavePdf = async () => {
 };
 
     const fieldStyle = (pos: {
-        x: number;
-        y: number;
-        width?: number;
-        fontSize?: number;
-        align?: 'left' | 'center' | 'right';
-    }): React.CSSProperties => ({
-        left: `${pos.x}mm`,
-        top: `${pos.y}mm`,
-        width: pos.width ? `${pos.width}mm` : undefined,
-        fontSize: pos.fontSize ? `${pos.fontSize}pt` : undefined,
-        textAlign: pos.align || 'left',
-    });
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+    fontSize?: number;
+    align?: 'left' | 'center' | 'right';
+    lineHeight?: number;
+    whiteSpace?: React.CSSProperties['whiteSpace'];
+    overflow?: React.CSSProperties['overflow'];
+    wordBreak?: React.CSSProperties['wordBreak'];
+    overflowWrap?: React.CSSProperties['overflowWrap'];
+    letterSpacing?: string;
+}): React.CSSProperties => ({
+    left: `${pos.x}mm`,
+    top: `${pos.y}mm`,
+    width: pos.width ? `${pos.width}mm` : undefined,
+    height: pos.height ? `${pos.height}mm` : undefined,
+    fontSize: pos.fontSize ? `${pos.fontSize}pt` : undefined,
+    textAlign: pos.align || 'left',
+    lineHeight: pos.lineHeight ?? 1.25,
+    whiteSpace: pos.whiteSpace ?? 'nowrap',
+    overflow: pos.overflow ?? 'visible',
+    wordBreak: pos.wordBreak,
+    overflowWrap: pos.overflowWrap,
+    letterSpacing: pos.letterSpacing,
+});
 
     const rightFieldStyle = (pos: {
         rightX: number;
@@ -1085,55 +1112,47 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
             <img src={bgSrc} className="invoice-template-bg" alt="" />
 
             {/* 宛先 */}
-            <div
-                className="invoice-field"
-                style={fieldStyle({
-                    x: 18,
-                    y: 26,
-                    fontSize: 11,
-                    width: 80,
-                })}
-            >
-                {customer?.post_no ? `〒${customer.post_no}` : ''}
-            </div>
+<div
+    className="invoice-field customer-address"
+    style={fieldStyle({
+        x: 18,
+        y: 26,
+        fontSize: 10.5,
+        width: 78,
+        height: 17,
+        lineHeight: 1.35,
+        whiteSpace: 'pre-line',
+        overflow: 'visible',
+        wordBreak: 'break-word',
+        overflowWrap: 'anywhere',
+    })}
+>
+    {[
+        customer?.post_no ? `〒${customer.post_no}` : '',
+        customer?.address_1 || '',
+        customer?.address_2 || '',
+    ]
+        .filter(Boolean)
+        .join('\n')}
+</div>
 
-            <div
-                className="invoice-field customer-address"
-                style={fieldStyle({
-                    x: 18,
-                    y: 31,
-                    fontSize: 11,
-                    width: 72,
-                })}
-            >
-                {customer?.address_1 || ''}
-            </div>
-
-            {customer?.address_2 && (
-                <div
-                    className="invoice-field customer-address"
-                    style={fieldStyle({
-                        x: 18,
-                        y: 36,
-                        fontSize: 11,
-                        width: 72,
-                    })}
-                >
-                    {customer.address_2}
-                </div>
-            )}
-
-            <div
-                className="invoice-field customer-name"
-                style={fieldStyle({
-                    x: 18,
-                    y: customer?.address_2 ? 43.5 : 38.5,
-                    fontSize: 11,
-                    width: 72,
-                })}
-            >
-                {customer?.customer_name ? `${customer.customer_name} 御中` : ''}
-            </div>
+<div
+    className="invoice-field customer-name"
+    style={fieldStyle({
+        x: 18,
+        y: 45,
+        fontSize: customer?.customer_name && customer.customer_name.length > 20 ? 10 : 11,
+        width: 78,
+        height: 12,
+        lineHeight: 1.35,
+        whiteSpace: 'normal',
+        overflow: 'visible',
+        wordBreak: 'break-word',
+        overflowWrap: 'anywhere',
+    })}
+>
+    {customer?.customer_name ? `${customer.customer_name} 御中` : ''}
+</div>
 
             {/* 右上可変項目 */}
             <div
@@ -1149,40 +1168,52 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
             </div>
 
             <div
-                className="invoice-field"
-                style={fieldStyle({
-                    x: 148,
-                    y: 38,
-                    fontSize: 8,
-                    width: 40,
-                })}
-            >
-                請求番号 {invoice.invoice_id || ''}
-            </div>
+    className="invoice-field compact-meta"
+    style={fieldStyle({
+        x: 148,
+        y: 38,
+        fontSize: 8,
+        width: 42,
+        lineHeight: 1.35,
+        whiteSpace: 'nowrap',
+        overflow: 'visible',
+        letterSpacing: '0.02em',
+    })}
+>
+    請求番号 {invoice.invoice_id || ''}
+</div>
 
             <div
-                className="invoice-field"
-                style={fieldStyle({
-                    x: 108.5,
-                    y: 47.5,
-                    fontSize: 8,
-                    width: 50,
-                })}
-            >
-                お客様コード {customer?.customer_code || project?.customer_code || ''}
-            </div>
+    className="invoice-field compact-meta"
+    style={fieldStyle({
+        x: 108.5,
+        y: 47.5,
+        fontSize: 8,
+        width: 58,
+        lineHeight: 1.35,
+        whiteSpace: 'nowrap',
+        overflow: 'visible',
+        letterSpacing: '0.02em',
+    })}
+>
+    お客様コード {customer?.customer_code || project?.customer_code || ''}
+</div>
 
             <div
-                className="invoice-field"
-                style={fieldStyle({
-                    x: 108.5,
-                    y: 54.7,
-                    fontSize: 8,
-                    width: 50,
-                })}
-            >
-                担当者 {salesUserName}
-            </div>
+    className="invoice-field compact-meta"
+    style={fieldStyle({
+        x: 108.5,
+        y: 54.7,
+        fontSize: 8,
+        width: 58,
+        lineHeight: 1.35,
+        whiteSpace: 'nowrap',
+        overflow: 'visible',
+        letterSpacing: '0.02em',
+    })}
+>
+    担当者 {salesUserName}
+</div>
 
             {/* 集計欄：右上原点 */}
             <div
@@ -1580,14 +1611,25 @@ const renderInvoiceCoverPage = () => {
                         <React.Fragment key={detail.row_uuid}>
                             <div
                                 className="invoice-field"
-                                style={detailTextStyle(9.3, rowIndex, 18, 10)}
+                                style={detailTextStyle(9.3, rowIndex, 18, 9)}
                             >
                                 {invoiceMonthDay}
                             </div>
 
                             <div
     className="invoice-field product"
-    style={detailTextStyle(29.7, rowIndex, 78, 10)}
+    style={fieldStyle({
+        x: 29.7,
+        y: detailY(rowIndex) + 0.5,
+        width: 70,
+        height: 8.8,
+        fontSize: 8.3,
+        lineHeight: 1.22,
+        whiteSpace: 'normal',
+        overflow: 'visible',
+        wordBreak: 'break-word',
+        overflowWrap: 'anywhere',
+    })}
 >
     {detailProductName(detail)}
 </div>
@@ -1622,7 +1664,18 @@ const renderInvoiceCoverPage = () => {
 
                             <div
     className="invoice-field"
-    style={detailTextStyle(187.3, rowIndex, 18, 9)}
+    style={fieldStyle({
+        x: 187.3,
+        y: detailY(rowIndex) + 0.5,
+        width: 18,
+        height: 8.8,
+        fontSize: 8.3,
+        lineHeight: 1.22,
+        whiteSpace: 'normal',
+        overflow: 'visible',
+        wordBreak: 'break-word',
+        overflowWrap: 'anywhere',
+    })}
 >
     {detailSummaryName(detail)}
 </div>
