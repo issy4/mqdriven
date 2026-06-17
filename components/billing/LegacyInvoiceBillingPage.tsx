@@ -103,6 +103,10 @@ interface IssueRecordRow {
     issue_status: string | null;
     issued_at: string | null;
     issue_count: number | null;
+
+    pdf_storage_path?: string | null;
+    pdf_url?: string | null;
+    excel_storage_path?: string | null;
 }
 
 interface DeliveryRecordRow {
@@ -388,6 +392,8 @@ const InvoicePdfPreviewModal: React.FC<{
 }> = ({ combined, details, masterName, onClose }) => {
     const { invoice, project, customer, salesUser } = combined;
 
+    const [isSavingPdf, setIsSavingPdf] = useState(false);
+
     const subtotal = numOf(invoice.subtotal);
     const consumption = numOf(invoice.consumption);
     const total = numOf(invoice.total);
@@ -639,6 +645,191 @@ const productNameForInvoice =
     window.setTimeout(() => {
         document.title = originalTitle;
     }, 1000);
+};
+
+const waitForImages = async (root: HTMLElement) => {
+    const images = Array.from(root.querySelectorAll('img'));
+
+    await Promise.all(
+        images.map((img) => {
+            if (img.complete) return Promise.resolve();
+
+            return new Promise<void>((resolve) => {
+                img.onload = () => resolve();
+                img.onerror = () => resolve();
+            });
+        }),
+    );
+};
+
+const generatePdfBlobFromPreview = async (): Promise<Blob> => {
+    const originalPrintArea = document.querySelector('.invoice-print-area') as HTMLElement | null;
+
+    if (!originalPrintArea) {
+        throw new Error('PDF生成対象が見つかりません。');
+    }
+
+    const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+    ]);
+
+    const workspace = document.createElement('div');
+    workspace.className = 'pdf-render-workspace';
+    workspace.style.position = 'fixed';
+    workspace.style.left = '-10000px';
+    workspace.style.top = '0';
+    workspace.style.width = '210mm';
+    workspace.style.background = '#fff';
+    workspace.style.zIndex = '-1';
+
+    const overrideStyle = document.createElement('style');
+    overrideStyle.textContent = `
+        .pdf-render-workspace .invoice-template-page {
+            margin: 0 !important;
+            box-shadow: none !important;
+        }
+
+        .pdf-render-workspace .invoice-template-inner {
+            left: 0 !important;
+            top: 0 !important;
+            transform: none !important;
+            transform-origin: top left !important;
+        }
+    `;
+
+    const clonedPrintArea = originalPrintArea.cloneNode(true) as HTMLElement;
+
+    workspace.appendChild(overrideStyle);
+    workspace.appendChild(clonedPrintArea);
+    document.body.appendChild(workspace);
+
+    try {
+        await waitForImages(workspace);
+
+        const pages = Array.from(
+            workspace.querySelectorAll('.invoice-template-page'),
+        ) as HTMLElement[];
+
+        if (pages.length === 0) {
+            throw new Error('PDFページが見つかりません。');
+        }
+
+        const pdf = new jsPDF({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: 'a4',
+            compress: true,
+        });
+
+        for (let i = 0; i < pages.length; i += 1) {
+            const page = pages[i];
+
+            const canvas = await html2canvas(page, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+            });
+
+            const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+            if (i > 0) {
+                pdf.addPage('a4', 'portrait');
+            }
+
+            pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+        }
+
+        return pdf.output('blob');
+    } finally {
+        document.body.removeChild(workspace);
+    }
+};
+
+const savePdfToSupabaseStorage = async () => {
+    const issueRecordId = combined.issue?.id;
+
+    if (!issueRecordId) {
+        throw new Error('発行履歴が無いため、PDFを保存できません。先に請求書を発行してください。');
+    }
+
+    const supabase = getSupabase();
+
+    const invoiceNo = invoice.invoice_id || 'no';
+    const issuedDate = invoice.create_date ? new Date(invoice.create_date) : new Date();
+
+    const yyyy = Number.isNaN(issuedDate.getTime())
+        ? String(new Date().getFullYear())
+        : String(issuedDate.getFullYear());
+
+    const mm = Number.isNaN(issuedDate.getTime())
+        ? String(new Date().getMonth() + 1).padStart(2, '0')
+        : String(issuedDate.getMonth() + 1).padStart(2, '0');
+
+    const issueCount = combined.issue?.issue_count || 1;
+    const storagePath = `invoices/${yyyy}/${mm}/${invoiceNo}/issue_${issueCount}.pdf`;
+
+    const pdfBlob = await generatePdfBlobFromPreview();
+
+    const { error: uploadError } = await supabase.storage
+        .from('invoice-pdfs')
+        .upload(storagePath, pdfBlob, {
+            contentType: 'application/pdf',
+            upsert: true,
+        });
+
+    if (uploadError) {
+        logSupabaseError('invoice pdf upload', uploadError);
+        throw uploadError;
+    }
+
+    const { data: signedData, error: signedError } = await supabase.storage
+        .from('invoice-pdfs')
+        .createSignedUrl(storagePath, 60 * 60 * 24 * 30);
+
+    if (signedError) {
+        logSupabaseError('invoice pdf signed url', signedError);
+        throw signedError;
+    }
+
+    const signedUrl = signedData?.signedUrl || null;
+
+    const { error: updateError } = await supabase
+        .from('invoice_issue_records')
+        .update({
+            pdf_storage_path: storagePath,
+            pdf_url: signedUrl,
+            updated_at: new Date().toISOString(),
+        })
+        .eq('id', issueRecordId);
+
+    if (updateError) {
+        logSupabaseError('invoice_issue_records update pdf info', updateError);
+        throw updateError;
+    }
+
+    return {
+        storagePath,
+        signedUrl,
+    };
+};
+
+const handleSavePdf = async () => {
+    setIsSavingPdf(true);
+
+    try {
+        const result = await savePdfToSupabaseStorage();
+
+        window.alert(
+            `請求書PDFを保存しました。\n\n保存先:\n${result.storagePath}`,
+        );
+    } catch (e) {
+        console.error('[InvoicePdfPreviewModal] failed to save pdf', e);
+        window.alert(e instanceof Error ? e.message : 'PDF保存に失敗しました。');
+    } finally {
+        setIsSavingPdf(false);
+    }
 };
 
     const fieldStyle = (pos: {
@@ -1183,6 +1374,13 @@ const renderInvoiceCoverPage = () => {
             `}</style>
 
             <div className="invoice-preview-toolbar max-w-[980px] mx-auto mb-4 flex justify-end gap-3">
+                <button
+    onClick={handleSavePdf}
+    disabled={isSavingPdf || !combined.issue?.id}
+    className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400"
+>
+    {isSavingPdf ? 'PDF保存中...' : 'PDFをStorage保存'}
+</button>
                 <button
                     onClick={printInvoice}
                     className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700"
