@@ -771,6 +771,8 @@ const generatePdfBlobFromPreview = async (): Promise<Blob> => {
             white-space: nowrap;
             box-sizing: border-box;
             font-weight: 400;
+/* html2canvas PDF保存用の文字位置補正 */
+            transform: translateY(-2.2mm);
         }
 
         .invoice-field.customer-name {
