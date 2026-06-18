@@ -391,7 +391,16 @@ const InvoicePdfPreviewModal: React.FC<{
     onClose: () => void;
     mode?: 'preview' | 'issue';
     onCompleted?: (nextTab: Tab) => Promise<void> | void;
-}> = ({ combined, details, masterName, onClose, mode = 'preview', onCompleted }) => {
+    fetchBillingSettingForInvoice: (combined: CombinedInvoice) => Promise<BillingSettingRow | null>;
+}> = ({
+    combined,
+    details,
+    masterName,
+    onClose,
+    mode = 'preview',
+    onCompleted,
+    fetchBillingSettingForInvoice,
+}) => {
     const { invoice, project, customer, salesUser } = combined;
 
     const [isSavingPdf, setIsSavingPdf] = useState(false);
@@ -1877,7 +1886,17 @@ const InvoiceDetailModal: React.FC<{
     onMarkAsDeliverySent: (combined: CombinedInvoice) => Promise<void>;
     onMarkAsPaid: (combined: CombinedInvoice) => Promise<void>;
     onInvoiceChanged: (nextTab: Tab) => Promise<void>;
-}> = ({ combined, onClose, onMarkAsIssued, onMarkAsPendingDelivery, onMarkAsDeliverySent, onMarkAsPaid, onInvoiceChanged }) => {
+    fetchBillingSettingForInvoice: (combined: CombinedInvoice) => Promise<BillingSettingRow | null>;
+}> = ({
+    combined,
+    onClose,
+    onMarkAsIssued,
+    onMarkAsPendingDelivery,
+    onMarkAsDeliverySent,
+    onMarkAsPaid,
+    onInvoiceChanged,
+    fetchBillingSettingForInvoice,
+}) => {
     const { invoice, project, customer, delivery, payment } = combined;
     const [details, setDetails] = useState<InvoiceDetailRow[]>([]);
     const [masterMap, setMasterMap] = useState<Record<string, string>>({});
@@ -2422,6 +2441,7 @@ const InvoiceDetailModal: React.FC<{
         details={details}
         masterName={masterName}
         mode={pdfPreviewMode}
+        fetchBillingSettingForInvoice={fetchBillingSettingForInvoice}
         onClose={() => setPdfPreviewMode(null)}
         onCompleted={async (nextTab) => {
             setPdfPreviewMode(null);
@@ -3613,6 +3633,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
         onMarkAsPendingDelivery={handleMarkAsPendingDelivery}
         onMarkAsDeliverySent={handleMarkAsDeliverySent}
         onMarkAsPaid={handleMarkAsPaid}
+        fetchBillingSettingForInvoice={fetchBillingSettingForInvoice}
         onInvoiceChanged={async (nextTab) => {
             setSelected(null);
             await loadInvoiceData();
