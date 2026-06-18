@@ -180,23 +180,55 @@ const ApprovalForm: React.FC<ApprovalFormProps> = ({ onSuccess, applicationCodeI
     });
 
     const executeSubmission = async () => {
-        if (!currentUser) {
-            setError('ユーザー情報が見つかりません。再度ログインしてください。');
-            return;
-        }
-        const payload = buildSubmissionPayload();
-        setIsSubmitting(true);
-        setError('');
+    if (!currentUser) {
+        setError('ユーザー情報が見つかりません。再度ログインしてください。');
+        return;
+    }
+
+    const payload = buildSubmissionPayload();
+
+    console.log('[ApprovalForm] submit payload:', payload);
+    console.log('[ApprovalForm] currentUser.id:', currentUser.id);
+
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+        await submitApplication(payload, currentUser.id);
+        console.log('[ApprovalForm] submitApplication success');
+
         try {
-            await submitApplication(payload, currentUser.id);
             await clearApplicationDraft(applicationCodeId, currentUser.id);
-            onSuccess();
-        } catch (err: any) {
-            setError('申請の提出に失敗しました。');
-        } finally {
-            setIsSubmitting(false);
+            console.log('[ApprovalForm] clearApplicationDraft success');
+        } catch (draftErr: any) {
+            console.warn('[ApprovalForm] clearApplicationDraft failed:', {
+                message: draftErr?.message,
+                details: draftErr?.details,
+                hint: draftErr?.hint,
+                code: draftErr?.code,
+                raw: draftErr,
+            });
         }
-    };
+
+        onSuccess();
+    } catch (err: any) {
+        console.error('[ApprovalForm] submitApplication failed:', {
+            message: err?.message,
+            details: err?.details,
+            hint: err?.hint,
+            code: err?.code,
+            raw: err,
+        });
+
+        setError(
+            err?.message
+                ? `申請の提出に失敗しました: ${err.message}`
+                : '申請の提出に失敗しました。'
+        );
+    } finally {
+        setIsSubmitting(false);
+    }
+};
 
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
