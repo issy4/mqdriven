@@ -389,7 +389,9 @@ const InvoicePdfPreviewModal: React.FC<{
     details: InvoiceDetailRow[];
     masterName: (legacyId: string | null | undefined) => string;
     onClose: () => void;
-}> = ({ combined, details, masterName, onClose }) => {
+    mode?: 'preview' | 'issue';
+    onCompleted?: (nextTab: Tab) => Promise<void> | void;
+}> = ({ combined, details, masterName, onClose, mode = 'preview', onCompleted }) => {
     const { invoice, project, customer, salesUser } = combined;
 
     const [isSavingPdf, setIsSavingPdf] = useState(false);
@@ -919,8 +921,11 @@ const generatePdfBlobFromPreview = async (): Promise<Blob> => {
     }
 };
 
-const savePdfToSupabaseStorage = async () => {
-    const issueRecordId = combined.issue?.id;
+const savePdfToSupabaseStorage = async (targetIssue?: {
+    id: string;
+    issue_count?: number | null;
+}) => {
+    const issueRecordId = targetIssue?.id || combined.issue?.id;
 
     if (!issueRecordId) {
         throw new Error('発行履歴が無いため、PDFを保存できません。先に請求書を発行してください。');
@@ -939,7 +944,8 @@ const savePdfToSupabaseStorage = async () => {
         ? String(new Date().getMonth() + 1).padStart(2, '0')
         : String(issuedDate.getMonth() + 1).padStart(2, '0');
 
-    const issueCount = combined.issue?.issue_count || 1;
+    const issueCount = targetIssue?.issue_count || combined.issue?.issue_count || 1;
+
     const storagePath = `invoices/${yyyy}/${mm}/${invoiceNo}/${invoiceNo}_issue_${issueCount}.pdf`;
 
     const pdfBlob = await generatePdfBlobFromPreview();
@@ -985,6 +991,157 @@ const savePdfToSupabaseStorage = async () => {
         storagePath,
         signedUrl,
     };
+};
+
+const ensureIssueRecord = async (): Promise<{ id: string; issue_count: number }> => {
+    const supabase = getSupabase();
+    const now = new Date().toISOString();
+
+    if (combined.issue?.id) {
+        const nextIssueCount = (combined.issue.issue_count || 0) + 1;
+
+        const { data, error } = await supabase
+            .from('invoice_issue_records')
+            .update({
+                issue_status: 'issued',
+                issued_at: combined.issue.issued_at || now,
+                last_issued_at: now,
+                issue_count: nextIssueCount,
+                customer_code: customer?.customer_code || project?.customer_code || null,
+                customer_name: customer?.customer_name || null,
+                note: '請求書PDFを発行し、Storageへ保存',
+                updated_at: now,
+            })
+            .eq('id', combined.issue.id)
+            .select('id, issue_count')
+            .single();
+
+        if (error) {
+            logSupabaseError('invoice_issue_records update issued for pdf', error);
+            throw error;
+        }
+
+        return {
+            id: data.id,
+            issue_count: data.issue_count || nextIssueCount,
+        };
+    }
+
+    const { data, error } = await supabase
+        .from('invoice_issue_records')
+        .insert({
+            legacy_invoice_id: invoice.row_uuid,
+            invoice_no: invoice.invoice_id,
+            customer_code: customer?.customer_code || project?.customer_code || null,
+            customer_name: customer?.customer_name || null,
+            issue_status: 'issued',
+            issued_at: now,
+            last_issued_at: now,
+            issue_count: 1,
+            note: '請求書PDFを発行し、Storageへ保存',
+        })
+        .select('id, issue_count')
+        .single();
+
+    if (error) {
+        logSupabaseError('invoice_issue_records insert issued for pdf', error);
+        throw error;
+    }
+
+    return {
+        id: data.id,
+        issue_count: data.issue_count || 1,
+    };
+};
+
+const createPendingDeliveryRecord = async (
+    issueRecordId: string,
+): Promise<'issued' | 'pending_send'> => {
+    const supabase = getSupabase();
+
+    const setting = await fetchBillingSettingForInvoice(combined);
+
+    if (!setting) {
+        return 'issued';
+    }
+
+    const method = setting.delivery_method || 'email';
+
+    if (method === 'email' && !setting.billing_email) {
+        return 'issued';
+    }
+
+    const subjectTemplate = setting.email_subject_template || DEFAULT_EMAIL_SUBJECT_TEMPLATE;
+    const bodyTemplate = setting.email_body_template || DEFAULT_EMAIL_BODY_TEMPLATE;
+    const attachmentNameTemplate = setting.attachment_name_template || DEFAULT_ATTACHMENT_NAME_TEMPLATE;
+
+    const deliveryPayload = {
+        legacy_invoice_id: invoice.row_uuid,
+        invoice_no: invoice.invoice_id,
+        issue_record_id: issueRecordId,
+        delivery_method: method,
+        delivery_status: 'pending',
+        to_email: method === 'email' ? setting.billing_email : null,
+        cc_email: method === 'email' ? setting.billing_cc : null,
+        bcc_email: method === 'email' ? setting.billing_bcc : null,
+        subject: method === 'email' ? renderTemplate(subjectTemplate, combined) : null,
+        body: method === 'email' ? renderTemplate(bodyTemplate, combined) : null,
+        attachment_file_name: renderTemplate(attachmentNameTemplate, combined),
+        error_message: null,
+        sent_at: null,
+    };
+
+    if (combined.delivery?.id) {
+        const { error } = await supabase
+            .from('invoice_delivery_records')
+            .update(deliveryPayload)
+            .eq('id', combined.delivery.id);
+
+        if (error) {
+            logSupabaseError('invoice_delivery_records update pending after pdf', error);
+            throw error;
+        }
+    } else {
+        const { error } = await supabase
+            .from('invoice_delivery_records')
+            .insert(deliveryPayload);
+
+        if (error) {
+            logSupabaseError('invoice_delivery_records insert pending after pdf', error);
+            throw error;
+        }
+    }
+
+    return 'pending_send';
+};
+
+const handleIssueAndSavePdf = async () => {
+    setIsSavingPdf(true);
+
+    try {
+        const issue = await ensureIssueRecord();
+
+        const result = await savePdfToSupabaseStorage(issue);
+
+        const nextTab = await createPendingDeliveryRecord(issue.id);
+
+        if (nextTab === 'pending_send') {
+            window.alert(
+                `請求書PDFを発行し、送付待ちに登録しました。\n\n保存先:\n${result.storagePath}`,
+            );
+        } else {
+            window.alert(
+                `請求書PDFを発行しました。\n\nただし、この顧客の有効な顧客別設定が見つからないため、送付待ちには登録していません。\n\n保存先:\n${result.storagePath}`,
+            );
+        }
+
+        await onCompleted?.(nextTab);
+    } catch (e) {
+        console.error('[InvoicePdfPreviewModal] failed to issue and save pdf', e);
+        window.alert(e instanceof Error ? e.message : '請求書PDFの発行に失敗しました。');
+    } finally {
+        setIsSavingPdf(false);
+    }
 };
 
 const handleSavePdf = async () => {
@@ -1569,13 +1726,23 @@ const renderInvoiceCoverPage = () => {
             `}</style>
 
             <div className="invoice-preview-toolbar max-w-[980px] mx-auto mb-4 flex justify-end gap-3">
-                <button
-    onClick={handleSavePdf}
-    disabled={isSavingPdf || !combined.issue?.id}
-    className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400"
->
-    {isSavingPdf ? 'PDF保存中...' : 'PDFをStorage保存'}
-</button>
+                {mode === 'issue' ? (
+    <button
+        onClick={handleIssueAndSavePdf}
+        disabled={isSavingPdf}
+        className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400"
+    >
+        {isSavingPdf ? '発行中...' : 'PDF発行して保存'}
+    </button>
+) : (
+    <button
+        onClick={handleSavePdf}
+        disabled={isSavingPdf || !combined.issue?.id}
+        className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400"
+    >
+        {isSavingPdf ? 'PDF保存中...' : 'PDFを再保存'}
+    </button>
+)}
                 <button
                     onClick={printInvoice}
                     className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700"
@@ -1709,7 +1876,8 @@ const InvoiceDetailModal: React.FC<{
     onMarkAsPendingDelivery: (combined: CombinedInvoice) => Promise<void>;
     onMarkAsDeliverySent: (combined: CombinedInvoice) => Promise<void>;
     onMarkAsPaid: (combined: CombinedInvoice) => Promise<void>;
-}> = ({ combined, onClose, onMarkAsIssued, onMarkAsPendingDelivery, onMarkAsDeliverySent, onMarkAsPaid }) => {
+    onInvoiceChanged: (nextTab: Tab) => Promise<void>;
+}> = ({ combined, onClose, onMarkAsIssued, onMarkAsPendingDelivery, onMarkAsDeliverySent, onMarkAsPaid, onInvoiceChanged }) => {
     const { invoice, project, customer, delivery, payment } = combined;
     const [details, setDetails] = useState<InvoiceDetailRow[]>([]);
     const [masterMap, setMasterMap] = useState<Record<string, string>>({});
@@ -1719,7 +1887,7 @@ const InvoiceDetailModal: React.FC<{
     const [isMarkingDeliverySent, setIsMarkingDeliverySent] = useState(false);
     const [isMarkingPaid, setIsMarkingPaid] = useState(false);
     const [isGeneratingExcel, setIsGeneratingExcel] = useState(false);
-    const [showPdfPreview, setShowPdfPreview] = useState(false);
+    const [pdfPreviewMode, setPdfPreviewMode] = useState<'preview' | 'issue' | null>(null);
 
     const isIssued = combined.issue?.issue_status === 'issued';
     const hasDelivery = !!combined.delivery;
@@ -2194,17 +2362,33 @@ const InvoiceDetailModal: React.FC<{
                         <StatusBadge status={combined.payment?.payment_status} kind="payment" />
                     </div>
 
-                    <button onClick={() => setShowPdfPreview(true)} disabled={isLoading || details.length === 0} className="flex items-center gap-2 bg-slate-800 text-white font-semibold py-2 px-4 rounded-lg hover:bg-slate-900 disabled:bg-slate-400">
-                        <FileText className="w-5 h-5" />
-                        請求書PDFプレビュー
-                    </button>
+                    <button
+    onClick={() => setPdfPreviewMode('preview')}
+    disabled={isLoading || details.length === 0}
+    className="flex items-center gap-2 bg-slate-800 text-white font-semibold py-2 px-4 rounded-lg hover:bg-slate-900 disabled:bg-slate-400"
+>
+    <FileText className="w-5 h-5" />
+    請求書PDFプレビュー
+</button>
 
                     {!isIssued && (
-                        <button onClick={handleMarkAsIssued} disabled={isMarkingIssued} className="flex items-center gap-2 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400">
-                            {isMarkingIssued ? <Loader className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
-                             請求書を発行する
-                        </button>
-                    )}
+    <button
+        onClick={() => {
+            const ok = window.confirm(
+                `請求番号 ${invoice.invoice_id || '—'} を発行します。\n\nPDFを生成してSupabase Storageに保存し、顧客別設定がある場合は送付待ちに登録します。\n\nよろしいですか？`,
+            );
+
+            if (!ok) return;
+
+            setPdfPreviewMode('issue');
+        }}
+        disabled={isMarkingIssued || isLoading || details.length === 0}
+        className="flex items-center gap-2 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400"
+    >
+        {isMarkingIssued ? <Loader className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+        請求書を発行する
+    </button>
+)}
 
                     {isIssued && !hasDelivery && (
                         <button onClick={handleMarkAsPendingDelivery} disabled={isMarkingPendingDelivery} className="flex items-center gap-2 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-slate-400">
@@ -2232,14 +2416,20 @@ const InvoiceDetailModal: React.FC<{
                     </button>
                 </div>
             </div>
-            {showPdfPreview && (
-                <InvoicePdfPreviewModal
-                    combined={combined}
-                    details={details}
-                    masterName={masterName}
-                    onClose={() => setShowPdfPreview(false)}
-                />
-            )}
+            {pdfPreviewMode && (
+    <InvoicePdfPreviewModal
+        combined={combined}
+        details={details}
+        masterName={masterName}
+        mode={pdfPreviewMode}
+        onClose={() => setPdfPreviewMode(null)}
+        onCompleted={async (nextTab) => {
+            setPdfPreviewMode(null);
+            onClose();
+            await onInvoiceChanged(nextTab);
+        }}
+    />
+)}
         </div>
     );
 };
@@ -3416,15 +3606,20 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             )}
 
             {selected && (
-                <InvoiceDetailModal
-                    combined={selected}
-                    onClose={() => setSelected(null)}
-                    onMarkAsIssued={handleMarkAsIssued}
-                    onMarkAsPendingDelivery={handleMarkAsPendingDelivery}
-                    onMarkAsDeliverySent={handleMarkAsDeliverySent}
-                    onMarkAsPaid={handleMarkAsPaid}
-                />
-            )}
+    <InvoiceDetailModal
+        combined={selected}
+        onClose={() => setSelected(null)}
+        onMarkAsIssued={handleMarkAsIssued}
+        onMarkAsPendingDelivery={handleMarkAsPendingDelivery}
+        onMarkAsDeliverySent={handleMarkAsDeliverySent}
+        onMarkAsPaid={handleMarkAsPaid}
+        onInvoiceChanged={async (nextTab) => {
+            setSelected(null);
+            await loadInvoiceData();
+            setActiveTab(nextTab);
+        }}
+    />
+)}
 
             {editingSetting && (
                 <BillingSettingModal
