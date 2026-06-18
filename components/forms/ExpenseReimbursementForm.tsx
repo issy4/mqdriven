@@ -893,40 +893,72 @@ const ExpenseReimbursementForm: React.FC<ExpenseReimbursementFormProps> = (props
     };
 
     const executeSubmission = async () => {
-        setIsSubmitting(true);
-        setError('');
+    if (!currentUser) {
+        setError('ユーザー情報が見つかりません。');
+        return;
+    }
+
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+        const payload = buildApplicationPayload();
+
+        console.log('[ExpenseReimbursementForm] submit payload:', payload);
+        console.log('[ExpenseReimbursementForm] currentUser.id:', currentUser.id);
+
+        await submitApplication(payload, currentUser.id);
+        console.log('[ExpenseReimbursementForm] submitApplication success');
+
         try {
-            const payload = buildApplicationPayload();
-            await submitApplication(payload, currentUser.id);
             await clearApplicationDraft(applicationCodeId, currentUser.id);
-            setHasSubmitted(true);
-            addToast?.('経費精算を送信しました。', 'success');
-
-            // Send submission notification email
-            if (emailService) {
-                try {
-                    const emailResult = await emailService.sendApplicationNotification(
-                        currentUser.email,
-                        '経費精算申請を送信しました',
-                        `経費精算申請が正常に送信されました。\n\n申請ID: ${applicationCodeId}\n申請日時: ${new Date().toLocaleString('ja-JP')}`
-                    );
-                    if (!emailResult.success) {
-                        console.warn('Submission email failed:', emailResult.error);
-                    }
-                } catch (emailError) {
-                    console.error('Email notification error:', emailError);
-                }
-            }
-
-            onSuccess();
-        } catch (err: any) {
-            console.error('申請送信エラー:', err);
-            setError(err.message || '申請の提出に失敗しました。');
-            addToast?.(err.message || '申請の提出に失敗しました。', 'error');
-        } finally {
-            setIsSubmitting(false);
+            console.log('[ExpenseReimbursementForm] clearApplicationDraft success');
+        } catch (draftErr: any) {
+            console.warn('[ExpenseReimbursementForm] clearApplicationDraft failed:', {
+                message: draftErr?.message,
+                details: draftErr?.details,
+                hint: draftErr?.hint,
+                code: draftErr?.code,
+                raw: draftErr,
+            });
         }
-    };
+
+        setHasSubmitted(true);
+        addToast?.('経費精算を送信しました。', 'success');
+
+        if (emailService) {
+            try {
+                const emailResult = await emailService.sendApplicationNotification(
+                    currentUser.email,
+                    '経費精算申請を送信しました',
+                    `経費精算申請が正常に送信されました。\n\n申請ID: ${applicationCodeId}\n申請日時: ${new Date().toLocaleString('ja-JP')}`
+                );
+
+                if (!emailResult.success) {
+                    console.warn('Submission email failed:', emailResult.error);
+                }
+            } catch (emailError) {
+                console.error('Email notification error:', emailError);
+            }
+        }
+
+        onSuccess();
+    } catch (err: any) {
+        console.error('[ExpenseReimbursementForm] submitApplication failed:', {
+            message: err?.message,
+            details: err?.details,
+            hint: err?.hint,
+            code: err?.code,
+            raw: err,
+        });
+
+        const message = err?.message || '申請の提出に失敗しました。';
+        setError(message);
+        addToast?.(message, 'error');
+    } finally {
+        setIsSubmitting(false);
+    }
+};
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -988,18 +1020,6 @@ const ExpenseReimbursementForm: React.FC<ExpenseReimbursementFormProps> = (props
     return (
         <div className="w-full p-2 sm:p-4">
             {/* デバッグ用ボタン */}
-            <div className="mb-4 p-2 bg-red-50 border border-red-200 rounded">
-                <button
-                    type="button"
-                    onClick={async () => {
-                        console.log('デバッグ：サービスロールで支払先を取得');
-                        await debugPaymentRecipientsWithServiceRole();
-                    }}
-                    className="bg-red-600 text-white px-3 py-1 rounded text-sm"
-                >
-                    デバッグ：サービスロールで支払先取得
-                </button>
-            </div>
 
             {hasSubmitted && (
                 <div className="mb-8 flex flex-col gap-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-6 dark:border-emerald-500/40 dark:bg-emerald-900/20">
