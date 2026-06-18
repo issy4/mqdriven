@@ -940,7 +940,7 @@ const savePdfToSupabaseStorage = async () => {
         : String(issuedDate.getMonth() + 1).padStart(2, '0');
 
     const issueCount = combined.issue?.issue_count || 1;
-    const storagePath = `invoices/${yyyy}/${mm}/${invoiceNo}/issue_${issueCount}.pdf`;
+    const storagePath = `invoices/${yyyy}/${mm}/${invoiceNo}/${invoiceNo}_issue_${issueCount}.pdf`;
 
     const pdfBlob = await generatePdfBlobFromPreview();
 
