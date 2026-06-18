@@ -1017,6 +1017,7 @@ const handleSavePdf = async () => {
     wordBreak?: React.CSSProperties['wordBreak'];
     overflowWrap?: React.CSSProperties['overflowWrap'];
     letterSpacing?: string;
+    fontFamily?: string;
 }): React.CSSProperties => ({
     left: `${pos.x}mm`,
     top: `${pos.y}mm`,
@@ -1030,6 +1031,7 @@ const handleSavePdf = async () => {
     wordBreak: pos.wordBreak,
     overflowWrap: pos.overflowWrap,
     letterSpacing: pos.letterSpacing,
+    fontFamily: pos.fontFamily,
 });
 
     const rightFieldStyle = (pos: {
@@ -1178,6 +1180,7 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
         whiteSpace: 'nowrap',
         overflow: 'visible',
         letterSpacing: '0.02em',
+        fontFamily: '"MS PMincho", "Yu Mincho", "YuMincho", "Yu Gothic", "Meiryo", serif',
     })}
 >
     請求番号： {invoice.invoice_id || ''}
@@ -1194,6 +1197,7 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
         whiteSpace: 'nowrap',
         overflow: 'visible',
         letterSpacing: '0.02em',
+        fontFamily: '"MS PMincho", "Yu Mincho", "YuMincho", "Yu Gothic", "Meiryo", serif',
     })}
 >
     お客様コード： {customer?.customer_code || project?.customer_code || ''}
@@ -1210,6 +1214,7 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
         whiteSpace: 'nowrap',
         overflow: 'visible',
         letterSpacing: '0.02em',
+        fontFamily: '"MS PMincho", "Yu Mincho", "YuMincho", "Yu Gothic", "Meiryo", serif',
     })}
 >
     担当者： {salesUserName}
@@ -1305,7 +1310,7 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
             <div
                 className="invoice-field page-count"
                 style={rightFieldStyle({
-                    rightX: 168.4,
+                    rightX: 188.4,
                     y: 288,
                     width: 45,
                     fontSize: 9,
@@ -1336,7 +1341,7 @@ const renderInvoiceCoverPage = () => {
 
             <div
                 className="invoice-field product"
-                style={detailTextStyle(30.2, 0, 78, 10)}
+                style={detailTextStyle(30.5, 0, 78, 10)}
             >
                 {productNameForInvoice}
             </div>
@@ -1359,7 +1364,7 @@ const renderInvoiceCoverPage = () => {
             <div
                 className="invoice-field"
                 style={fieldStyle({
-                    x: 29.9,
+                    x: 30.5,
                     y: coverTaxRowY,
                     width: 70,
                     fontSize: 9,
@@ -1371,7 +1376,7 @@ const renderInvoiceCoverPage = () => {
             <div
                 className="invoice-field"
                 style={fieldStyle({
-                    x: 29.9,
+                    x: 30.5,
                     y: coverTargetAmountY,
                     width: 70,
                     fontSize: 9,
@@ -1555,7 +1560,6 @@ const renderInvoiceCoverPage = () => {
                     white-space: pre-wrap;
                     line-height: 1.12;
                     overflow: hidden;
-                    font-family: "MS PMincho", "Yu Mincho", "YuMincho", "Yu Gothic", "Meiryo", serif;
                 }
 
                 .invoice-field.page-count {
@@ -1620,7 +1624,7 @@ const renderInvoiceCoverPage = () => {
                             <div
     className="invoice-field product"
     style={fieldStyle({
-        x: 30.2,
+        x: 30.5,
         y: detailY(rowIndex) + 0.5,
         width: 70,
         height: 8.8,
@@ -1630,6 +1634,7 @@ const renderInvoiceCoverPage = () => {
         overflow: 'visible',
         wordBreak: 'break-word',
         overflowWrap: 'anywhere',
+        fontFamily: '"MS PMincho", "Yu Mincho", "YuMincho", "Yu Gothic", "Meiryo", serif',
     })}
 >
     {detailProductName(detail)}
@@ -1676,6 +1681,7 @@ const renderInvoiceCoverPage = () => {
         overflow: 'visible',
         wordBreak: 'break-word',
         overflowWrap: 'anywhere',
+        fontFamily: '"MS PMincho", "Yu Mincho", "YuMincho", "Yu Gothic", "Meiryo", serif',
     })}
 >
     {detailSummaryName(detail)}
