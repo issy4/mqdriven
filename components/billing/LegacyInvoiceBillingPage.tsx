@@ -483,7 +483,7 @@ const productNameForInvoice =
             background: #fff;
             width: 210mm;
             min-height: 297mm;
-            font-family: "Yu Gothic", "Meiryo", Arial, sans-serif;
+            font-family: "MS PMincho", Yu Gothic", "Meiryo", Arial, sans-serif;
         }
 
         * {
@@ -513,7 +513,7 @@ const productNameForInvoice =
             break-after: page;
             page-break-inside: avoid;
             break-inside: avoid;
-            font-family: "Yu Gothic", "Meiryo", Arial, sans-serif;
+            font-family: "MS PMincho", Yu Gothic", "Meiryo", Arial, sans-serif;
         }
 
         .invoice-template-page:last-child {
@@ -1151,7 +1151,7 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
         overflowWrap: 'anywhere',
     })}
 >
-    {customer?.customer_name ? `${customer.customer_name} 御中` : ''}
+    {customer?.customer_name ? `${customer.customer_name}　御中` : ''}
 </div>
 
             {/* 右上可変項目 */}
@@ -1180,7 +1180,7 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
         letterSpacing: '0.02em',
     })}
 >
-    請求番号 {invoice.invoice_id || ''}
+    請求番号： {invoice.invoice_id || ''}
 </div>
 
             <div
@@ -1196,7 +1196,7 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
         letterSpacing: '0.02em',
     })}
 >
-    お客様コード {customer?.customer_code || project?.customer_code || ''}
+    お客様コード： {customer?.customer_code || project?.customer_code || ''}
 </div>
 
             <div
@@ -1212,15 +1212,15 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
         letterSpacing: '0.02em',
     })}
 >
-    担当者 {salesUserName}
+    担当者： {salesUserName}
 </div>
 
             {/* 集計欄：右上原点 */}
             <div
                 className="invoice-field amount"
                 style={rightFieldStyle({
-                    rightX: 28.3,
-                    y: 110,
+                    rightX: 28,
+                    y: 109.8,
                     width: 20,
                     fontSize: 10,
                 })}
@@ -1231,8 +1231,8 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
             <div
                 className="invoice-field amount"
                 style={rightFieldStyle({
-                    rightX: 49,
-                    y: 110,
+                    rightX: 48.8,
+                    y: 109.8,
                     width: 20,
                     fontSize: 10,
                 })}
@@ -1244,7 +1244,7 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
                 className="invoice-field amount"
                 style={rightFieldStyle({
                     rightX: 69.7,
-                    y: 110,
+                    y: 109.8,
                     width: 18,
                     fontSize: 10,
                 })}
@@ -1256,7 +1256,7 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
                 className="invoice-field amount"
                 style={rightFieldStyle({
                     rightX: 113.7,
-                    y: 110,
+                    y: 109.8,
                     width: 24,
                     fontSize: 10,
                 })}
@@ -1268,7 +1268,7 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
                 className="invoice-field amount"
                 style={rightFieldStyle({
                     rightX: 158.5,
-                    y: 110,
+                    y: 109.8,
                     width: 22,
                     fontSize: 10,
                 })}
@@ -1280,7 +1280,7 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
                 className="invoice-field amount"
                 style={rightFieldStyle({
                     rightX: 179.7,
-                    y: 110,
+                    y: 109.8,
                     width: 24,
                     fontSize: 10,
                 })}
@@ -1292,7 +1292,7 @@ const detailSummaryName = (detail: InvoiceDetailRow): string => {
                 className="invoice-field amount"
                 style={rightFieldStyle({
                     rightX: 201.9,
-                    y: 110,
+                    y: 109.8,
                     width: 24,
                     fontSize: 10,
                 })}
@@ -1336,7 +1336,7 @@ const renderInvoiceCoverPage = () => {
 
             <div
                 className="invoice-field product"
-                style={detailTextStyle(29.7, 0, 78, 10)}
+                style={detailTextStyle(29.9, 0, 78, 10)}
             >
                 {productNameForInvoice}
             </div>
@@ -1350,7 +1350,7 @@ const renderInvoiceCoverPage = () => {
 
             <div
                 className="invoice-field amount"
-                style={detailRightStyle(184.9, 0, 20, 10)}
+                style={detailRightStyle(184.4, 0, 20, 10)}
             >
                 【外 税】
             </div>
@@ -1359,7 +1359,7 @@ const renderInvoiceCoverPage = () => {
             <div
                 className="invoice-field"
                 style={fieldStyle({
-                    x: 29.7,
+                    x: 29.9,
                     y: coverTaxRowY,
                     width: 70,
                     fontSize: 9,
@@ -1371,7 +1371,7 @@ const renderInvoiceCoverPage = () => {
             <div
                 className="invoice-field"
                 style={fieldStyle({
-                    x: 29.7,
+                    x: 29.9,
                     y: coverTargetAmountY,
                     width: 70,
                     fontSize: 9,
@@ -1402,7 +1402,7 @@ const renderInvoiceCoverPage = () => {
                     align: 'center',
                 })}
             >
-                ■　以下余白　■
+                ■　以 下 余 白　■
             </div>
         </>,
     );
@@ -1619,7 +1619,7 @@ const renderInvoiceCoverPage = () => {
                             <div
     className="invoice-field product"
     style={fieldStyle({
-        x: 29.7,
+        x: 29.9,
         y: detailY(rowIndex) + 0.5,
         width: 70,
         height: 8.8,
@@ -1643,7 +1643,7 @@ const renderInvoiceCoverPage = () => {
 
                             <div
                                 className="invoice-field amount"
-                                style={detailRightStyle(141, rowIndex, 22, 10)}
+                                style={detailRightStyle(140.9, rowIndex, 22, 10)}
                             >
                                 {unitPrice ? unitPrice.toLocaleString() : ''}
                             </div>
@@ -1657,7 +1657,7 @@ const renderInvoiceCoverPage = () => {
 
                             <div
                                 className="invoice-field amount"
-                                style={detailRightStyle(184.9, rowIndex, 20, 10)}
+                                style={detailRightStyle(184.4, rowIndex, 20, 10)}
                             >
                                 【外 税】
                             </div>
@@ -1665,8 +1665,8 @@ const renderInvoiceCoverPage = () => {
                             <div
     className="invoice-field"
     style={fieldStyle({
-        x: 187.3,
-        y: detailY(rowIndex) + 0.5,
+        x: 187.8,
+        y: detailY(rowIndex) + 0.4,
         width: 18,
         height: 8.8,
         fontSize: 8.3,
