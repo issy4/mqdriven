@@ -1336,7 +1336,7 @@ const renderInvoiceCoverPage = () => {
 
             <div
                 className="invoice-field product"
-                style={detailTextStyle(29.9, 0, 78, 10)}
+                style={detailTextStyle(30.2, 0, 78, 10)}
             >
                 {productNameForInvoice}
             </div>
@@ -1350,7 +1350,7 @@ const renderInvoiceCoverPage = () => {
 
             <div
                 className="invoice-field amount"
-                style={detailRightStyle(184.4, 0, 20, 10)}
+                style={detailRightStyle(184, 0, 20, 10)}
             >
                 【外 税】
             </div>
@@ -1555,6 +1555,7 @@ const renderInvoiceCoverPage = () => {
                     white-space: pre-wrap;
                     line-height: 1.12;
                     overflow: hidden;
+                    font-family: "MS PMincho", "Yu Mincho", "YuMincho", "Yu Gothic", "Meiryo", serif;
                 }
 
                 .invoice-field.page-count {
@@ -1619,7 +1620,7 @@ const renderInvoiceCoverPage = () => {
                             <div
     className="invoice-field product"
     style={fieldStyle({
-        x: 29.9,
+        x: 30.2,
         y: detailY(rowIndex) + 0.5,
         width: 70,
         height: 8.8,
@@ -1657,7 +1658,7 @@ const renderInvoiceCoverPage = () => {
 
                             <div
                                 className="invoice-field amount"
-                                style={detailRightStyle(184.4, rowIndex, 20, 10)}
+                                style={detailRightStyle(184, rowIndex, 20, 10)}
                             >
                                 【外 税】
                             </div>
@@ -1665,7 +1666,7 @@ const renderInvoiceCoverPage = () => {
                             <div
     className="invoice-field"
     style={fieldStyle({
-        x: 187.8,
+        x: 188.8,
         y: detailY(rowIndex) + 0.4,
         width: 18,
         height: 8.8,
