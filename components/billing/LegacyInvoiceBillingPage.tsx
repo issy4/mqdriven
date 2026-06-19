@@ -123,6 +123,7 @@ interface DeliveryRecordRow {
     body?: string | null;
     attachment_file_name?: string | null;
     sent_at: string | null;
+    error_message?: string | null;
 }
 
 interface PaymentMatchRow {
@@ -2020,9 +2021,10 @@ const InvoiceDetailModal: React.FC<{
     onMarkAsPaid,
     onInvoiceChanged,
     fetchBillingSettingForInvoice,
+    onRefreshDeliveryFromBillingSetting,
 }) => {
-    const { invoice, project, customer, delivery, payment } = combined;
-    const displayDelivery = refreshedDelivery || delivery;
+    const { invoice, project, customer, issue, delivery, payment } = combined;
+
     const [details, setDetails] = useState<InvoiceDetailRow[]>([]);
     const [masterMap, setMasterMap] = useState<Record<string, string>>({});
     const [isLoading, setIsLoading] = useState(true);
@@ -2035,10 +2037,12 @@ const InvoiceDetailModal: React.FC<{
     const [refreshedDelivery, setRefreshedDelivery] = useState<DeliveryRecordRow | null>(null);
     const [pdfPreviewMode, setPdfPreviewMode] = useState<'preview' | 'issue' | 'issue-auto' | null>(null);
 
+    const displayDelivery = refreshedDelivery || delivery;
+
     const isIssued = combined.issue?.issue_status === 'issued';
     const hasDelivery = !!combined.delivery;
-    const isPendingDelivery = delivery?.delivery_status === 'pending';
-    const isDeliverySent = delivery?.delivery_status === 'sent';
+    const isPendingDelivery = displayDelivery?.delivery_status === 'pending';
+    const isDeliverySent = displayDelivery?.delivery_status === 'sent';
     const isPaid = payment?.payment_status === 'paid';
 
     useEffect(() => {
