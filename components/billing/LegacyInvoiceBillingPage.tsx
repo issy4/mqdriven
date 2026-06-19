@@ -3502,90 +3502,132 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 );
 
     const handleMarkAsPendingDelivery = useCallback(
-        async (combined: CombinedInvoice) => {
-            const supabase = getSupabase();
+    async (combined: CombinedInvoice) => {
+        const supabase = getSupabase();
 
-            try {
-                if (combined.issue?.issue_status !== 'issued' || !combined.issue?.id) {
-                    throw new Error('先に発行済みとして登録してください。');
-                }
-
-                const setting = await fetchBillingSettingForInvoice(combined);
-                if (!setting) {
-    setSelected(null);
-    await loadInvoiceData();
-    setActiveTab('issued');
-    setError('');
-
-    setBillingSettingMissingModal({
-        isOpen: true,
-        invoice: combined,
-        message: 'この顧客の有効な顧客別設定が見つかりません。先に顧客別設定を登録してください。',
-    });
-
-    return;
-}
-
-                const method = setting.delivery_method || 'email';
-                if (method === 'email' && !setting.billing_email) {
-    setSelected(null);
-    await loadInvoiceData();
-    setActiveTab('issued');
-    setError('');
-
-    setBillingSettingMissingModal({
-        isOpen: true,
-        invoice: combined,
-        message: '送信方法がメールですが、請求先メールアドレスが設定されていません。顧客別設定を確認してください。',
-    });
-
-    return;
-}
-
-                const subjectTemplate = setting.email_subject_template || DEFAULT_EMAIL_SUBJECT_TEMPLATE;
-                const bodyTemplate = setting.email_body_template || DEFAULT_EMAIL_BODY_TEMPLATE;
-                const attachmentNameTemplate = setting.attachment_name_template || DEFAULT_ATTACHMENT_NAME_TEMPLATE;
-                const payload = {
-                    legacy_invoice_id: combined.invoice.row_uuid,
-                    invoice_no: combined.invoice.invoice_id,
-                    issue_record_id: combined.issue.id,
-                    delivery_method: method,
-                    delivery_status: 'pending',
-                    to_email: method === 'email' ? setting.billing_email : null,
-                    cc_email: method === 'email' ? setting.billing_cc : null,
-                    bcc_email: method === 'email' ? setting.billing_bcc : null,
-                    subject: method === 'email' ? renderTemplate(subjectTemplate, combined) : null,
-                    body: method === 'email' ? renderTemplate(bodyTemplate, combined) : null,
-                    attachment_file_name: renderTemplate(attachmentNameTemplate, combined),
-                    error_message: null,
-                    sent_at: null,
-                };
-
-                if (combined.delivery?.id) {
-                    const { error } = await supabase.from('invoice_delivery_records').update(payload).eq('id', combined.delivery.id);
-                    if (error) {
-                        logSupabaseError('invoice_delivery_records update pending', error);
-                        throw error;
-                    }
-                } else {
-                    const { error } = await supabase.from('invoice_delivery_records').insert(payload);
-                    if (error) {
-                        logSupabaseError('invoice_delivery_records insert pending', error);
-                        throw error;
-                    }
-                }
-
-                setSelected(null);
-                await loadInvoiceData();
-                setActiveTab('pending_send');
-            } catch (e) {
-                console.error('[LegacyInvoiceBillingPage] failed to mark invoice as pending delivery', e);
-                setError(e instanceof Error ? e.message : '送付待ち登録に失敗しました。');
-                throw e;
+        try {
+            if (combined.issue?.issue_status !== 'issued' || !combined.issue?.id) {
+                throw new Error('先に発行済みとして登録してください。');
             }
-        },
-        [loadInvoiceData],
-    );
+
+            if (combined.delivery?.delivery_status === 'sent') {
+                throw new Error('すでに送付済みのため、顧客別設定を再反映できません。');
+            }
+
+            const setting = await fetchBillingSettingForInvoice(combined);
+
+            if (!setting) {
+                setSelected(null);
+                setActiveTab('issued');
+                setError('');
+
+                setBillingSettingMissingModal({
+                    isOpen: true,
+                    invoice: combined,
+                    message: 'この顧客の有効な顧客別設定が見つかりません。先に顧客別設定を登録してください。',
+                });
+
+                try {
+                    await loadInvoiceData();
+                } catch (reloadError) {
+                    console.warn('請求一覧の再読み込みに失敗しました:', reloadError);
+                }
+
+                return;
+            }
+
+            const method = setting.delivery_method || 'email';
+
+            if (method === 'email' && !setting.billing_email) {
+                setSelected(null);
+                setActiveTab('issued');
+                setError('');
+
+                setBillingSettingMissingModal({
+                    isOpen: true,
+                    invoice: combined,
+                    message: '送信方法がメールですが、請求先メールアドレスが設定されていません。顧客別設定を確認してください。',
+                });
+
+                try {
+                    await loadInvoiceData();
+                } catch (reloadError) {
+                    console.warn('請求一覧の再読み込みに失敗しました:', reloadError);
+                }
+
+                return;
+            }
+
+            const subjectTemplate =
+                setting.email_subject_template || DEFAULT_EMAIL_SUBJECT_TEMPLATE;
+
+            const bodyTemplate =
+                setting.email_body_template || DEFAULT_EMAIL_BODY_TEMPLATE;
+
+            const attachmentNameTemplate =
+                setting.attachment_name_template || DEFAULT_ATTACHMENT_NAME_TEMPLATE;
+
+            const payload = {
+                legacy_invoice_id: combined.invoice.row_uuid,
+                invoice_no: combined.invoice.invoice_id,
+                issue_record_id: combined.issue.id,
+                delivery_method: method,
+                delivery_status: 'pending',
+                to_email: method === 'email' ? setting.billing_email : null,
+                cc_email: method === 'email' ? setting.billing_cc : null,
+                bcc_email: method === 'email' ? setting.billing_bcc : null,
+                subject: method === 'email' ? renderTemplate(subjectTemplate, combined) : null,
+                body: method === 'email' ? renderTemplate(bodyTemplate, combined) : null,
+                attachment_file_name: renderTemplate(attachmentNameTemplate, combined),
+                error_message: null,
+                sent_at: null,
+            };
+
+            if (combined.delivery?.id) {
+                const { error } = await supabase
+                    .from('invoice_delivery_records')
+                    .update(payload)
+                    .eq('id', combined.delivery.id);
+
+                if (error) {
+                    logSupabaseError('invoice_delivery_records update pending', error);
+                    throw error;
+                }
+            } else {
+                const { error } = await supabase
+                    .from('invoice_delivery_records')
+                    .insert(payload);
+
+                if (error) {
+                    logSupabaseError('invoice_delivery_records insert pending', error);
+                    throw error;
+                }
+            }
+
+            setSelected(null);
+            await loadInvoiceData();
+            setActiveTab('pending_send');
+            setError('');
+        } catch (e: any) {
+            console.error('[LegacyInvoiceBillingPage] failed to mark invoice as pending delivery', {
+                message: e?.message,
+                details: e?.details,
+                hint: e?.hint,
+                code: e?.code,
+                raw: e,
+            });
+
+            setError(
+                e?.message
+                    ? `送付待ち登録に失敗しました: ${e.message}`
+                    : '送付待ち登録に失敗しました。',
+            );
+
+            throw e;
+        }
+    },
+    [loadInvoiceData, fetchBillingSettingForInvoice],
+);
 
     const handleMarkAsDeliverySent = useCallback(
     async (combined: CombinedInvoice) => {
