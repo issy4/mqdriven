@@ -1915,6 +1915,88 @@ const renderInvoiceCoverPage = () => {
     );
 };
 
+const BillingSettingMissingModal: React.FC<{
+    invoice: CombinedInvoice | null;
+    message: string;
+    onClose: () => void;
+    onOpenSettings: () => void;
+}> = ({ invoice, message, onClose, onOpenSettings }) => {
+    if (!invoice) return null;
+
+    const customerName =
+        invoice.customer?.customer_name ||
+        invoice.project?.customer_code ||
+        'この顧客';
+
+    const customerCode =
+        invoice.customer?.customer_code ||
+        invoice.project?.customer_code ||
+        '—';
+
+    return (
+        <div className="fixed inset-0 z-[90] bg-slate-950/60 flex items-center justify-center p-4">
+            <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-800 shadow-2xl border border-slate-200 dark:border-slate-700">
+                <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                        顧客別請求設定が必要です
+                    </h3>
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                        請求書は発行済みですが、送付待ちにするには顧客別設定の登録が必要です。
+                    </p>
+                </div>
+
+                <div className="p-6 space-y-4">
+                    <div className="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700">
+                        {message || 'この顧客の有効な顧客別設定が見つかりません。'}
+                    </div>
+
+                    <div className="rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 p-4 text-sm">
+                        <div className="flex justify-between gap-4">
+                            <span className="text-slate-500">顧客名</span>
+                            <span className="font-semibold text-slate-900 dark:text-white text-right">
+                                {customerName}
+                            </span>
+                        </div>
+                        <div className="flex justify-between gap-4 mt-2">
+                            <span className="text-slate-500">顧客コード</span>
+                            <span className="font-semibold text-slate-900 dark:text-white">
+                                {customerCode}
+                            </span>
+                        </div>
+                        <div className="flex justify-between gap-4 mt-2">
+                            <span className="text-slate-500">請求番号</span>
+                            <span className="font-semibold text-slate-900 dark:text-white">
+                                {invoice.invoice.invoice_id || '—'}
+                            </span>
+                        </div>
+                    </div>
+
+                    <p className="text-sm text-slate-600 dark:text-slate-300">
+                        顧客別設定で、送付方法・請求先メールアドレス・件名テンプレート・本文テンプレートを登録してください。
+                    </p>
+                </div>
+
+                <div className="p-6 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200"
+                    >
+                        閉じる
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onOpenSettings}
+                        className="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700"
+                    >
+                        顧客別設定を開く
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // ---------------------------------------------------------------------------
 // Detail Modal
 // ---------------------------------------------------------------------------
@@ -2840,6 +2922,16 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     const [editingSetting, setEditingSetting] = useState<Partial<BillingSettingRow> | null>(null);
     const [selected, setSelected] = useState<CombinedInvoice | null>(null);
 
+    const [billingSettingMissingModal, setBillingSettingMissingModal] = useState<{
+    isOpen: boolean;
+    invoice: CombinedInvoice | null;
+    message: string;
+}>({
+    isOpen: false,
+    invoice: null,
+    message: '',
+});
+
     const loadInvoiceData = useCallback(async () => {
         setIsLoading(true);
         setError(null);
@@ -3249,7 +3341,13 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     setSelected(null);
     await loadInvoiceData();
     setActiveTab('issued');
-    setError('この顧客の有効な顧客別設定が見つかりません。先に顧客別設定を登録してください。');
+
+    setBillingSettingMissingModal({
+        isOpen: true,
+        invoice: combined,
+        message: 'この顧客の有効な顧客別設定が見つかりません。先に顧客別設定を登録してください。',
+    });
+
     return;
 }
 
@@ -3259,7 +3357,13 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     setSelected(null);
     await loadInvoiceData();
     setActiveTab('issued');
-    setError('送信方法がメールですが、請求先メールが設定されていません。顧客別設定を確認してください。');
+
+    setBillingSettingMissingModal({
+        isOpen: true,
+        invoice: combined,
+        message: '送信方法がメールですが、請求先メールアドレスが設定されていません。顧客別設定を確認してください。',
+    });
+
     return;
 }
 
@@ -3671,6 +3775,29 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             setSelected(null);
             await loadInvoiceData();
             setActiveTab(nextTab);
+        }}
+    />
+)}
+
+{billingSettingMissingModal.isOpen && (
+    <BillingSettingMissingModal
+        invoice={billingSettingMissingModal.invoice}
+        message={billingSettingMissingModal.message}
+        onClose={() =>
+            setBillingSettingMissingModal({
+                isOpen: false,
+                invoice: null,
+                message: '',
+            })
+        }
+        onOpenSettings={() => {
+            setBillingSettingMissingModal({
+                isOpen: false,
+                invoice: null,
+                message: '',
+            });
+            setSelected(null);
+            setActiveTab('settings');
         }}
     />
 )}
