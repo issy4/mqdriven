@@ -3070,7 +3070,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
             const { data: issueData, error: issueError } = await supabase
                 .from('invoice_issue_records')
-                .select('id, legacy_invoice_id, invoice_no, issue_status, issued_at, issue_count');
+                .select('id, legacy_invoice_id, invoice_no, issue_status, issued_at, issue_count, pdf_storage_path, pdf_url');
 
             if (issueError) {
                 logSupabaseError('invoice_issue_records', issueError);
@@ -3115,12 +3115,23 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 });
                 setPayments(paymentMap);
             }
-        } catch (e) {
-            console.error('[LegacyInvoiceBillingPage] failed to load legacy invoices', e);
-            setError(e instanceof Error ? e.message : '請求データの取得に失敗しました。');
-        } finally {
-            setIsLoading(false);
-        }
+        } catch (e: any) {
+    console.error('[LegacyInvoiceBillingPage] failed to load legacy invoices', {
+        message: e?.message,
+        details: e?.details,
+        hint: e?.hint,
+        code: e?.code,
+        raw: e,
+    });
+
+    setError(
+        e?.message
+            ? `請求データの取得に失敗しました: ${e.message}`
+            : '請求データの取得に失敗しました。'
+    );
+} finally {
+    setIsLoading(false);
+}
     }, []);
 
     const loadSettings = useCallback(async () => {
