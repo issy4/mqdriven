@@ -2040,7 +2040,7 @@ const InvoiceDetailModal: React.FC<{
     const displayDelivery = refreshedDelivery || delivery;
 
     const isIssued = combined.issue?.issue_status === 'issued';
-    const hasDelivery = !!combined.delivery;
+    const hasDelivery = !!displayDelivery;
     const isPendingDelivery = displayDelivery?.delivery_status === 'pending';
     const isDeliverySent = displayDelivery?.delivery_status === 'sent';
     const isPaid = payment?.payment_status === 'paid';
@@ -2357,58 +2357,76 @@ const executeMarkAsDeliverySent = async () => {
                         </div>
                     )}
 
-                    {delivery && (
-                        <div className="mb-6 rounded-xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/60 dark:bg-blue-950/20 p-4">
-                            <div className="flex items-center justify-between gap-3 mb-3">
-                                <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                                    <Send className="w-4 h-4 text-blue-600" />
-                                    送付情報
-                                </h3>
-                                <StatusBadge status={delivery.delivery_status} kind="delivery" method={delivery.delivery_method} />
-                            </div>
+                    {displayDelivery && (
+    <div className="mb-6 rounded-xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/60 dark:bg-blue-950/20 p-4">
+        <div className="flex items-center justify-between gap-3 mb-3">
+            <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Send className="w-4 h-4 text-blue-600" />
+                送付情報
+            </h3>
+            <StatusBadge
+                status={displayDelivery.delivery_status}
+                kind="delivery"
+                method={displayDelivery.delivery_method}
+            />
+        </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                                <div>
-                                    <p className="text-xs font-medium text-slate-500">送付方法</p>
-                                    <p className="text-slate-900 dark:text-white">{deliveryMethodLabel(delivery.delivery_method)}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs font-medium text-slate-500">送付済み日時</p>
-                                    <p className="text-slate-900 dark:text-white">{formatDateTime(delivery.sent_at)}</p>
-                                </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <div>
+                <p className="text-xs font-medium text-slate-500">送付方法</p>
+                <p className="text-slate-900 dark:text-white">
+                    {deliveryMethodLabel(displayDelivery.delivery_method)}
+                </p>
+            </div>
 
-                                {delivery.delivery_method === 'email' && (
-                                    <>
-                                        <div>
-                                            <p className="text-xs font-medium text-slate-500">宛先</p>
-                                            <p className="text-slate-900 dark:text-white">{delivery.to_email || '—'}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-medium text-slate-500">CC / BCC</p>
-                                            <p className="text-slate-900 dark:text-white">
-                                                CC: {delivery.cc_email || '—'} / BCC: {delivery.bcc_email || '—'}
-                                            </p>
-                                        </div>
-                                        <div className="sm:col-span-2">
-                                            <p className="text-xs font-medium text-slate-500">件名</p>
-                                            <p className="text-slate-900 dark:text-white">{delivery.subject || '—'}</p>
-                                        </div>
-                                        <div className="sm:col-span-2">
-                                            <p className="text-xs font-medium text-slate-500">本文</p>
-                                            <pre className="mt-1 whitespace-pre-wrap rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 text-slate-700 dark:text-slate-300 text-xs leading-relaxed">
-                                                {delivery.body || '—'}
-                                            </pre>
-                                        </div>
-                                    </>
-                                )}
+            <div>
+                <p className="text-xs font-medium text-slate-500">送付済み日時</p>
+                <p className="text-slate-900 dark:text-white">
+                    {formatDateTime(displayDelivery.sent_at)}
+                </p>
+            </div>
 
-                                <div className="sm:col-span-2">
-                                    <p className="text-xs font-medium text-slate-500">添付ファイル名</p>
-                                    <p className="text-slate-900 dark:text-white">{delivery.attachment_file_name || '—'}</p>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+            {displayDelivery.delivery_method === 'email' && (
+                <>
+                    <div>
+                        <p className="text-xs font-medium text-slate-500">宛先</p>
+                        <p className="text-slate-900 dark:text-white">
+                            {displayDelivery.to_email || '—'}
+                        </p>
+                    </div>
+
+                    <div>
+                        <p className="text-xs font-medium text-slate-500">CC / BCC</p>
+                        <p className="text-slate-900 dark:text-white">
+                            CC: {displayDelivery.cc_email || '—'} / BCC: {displayDelivery.bcc_email || '—'}
+                        </p>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                        <p className="text-xs font-medium text-slate-500">件名</p>
+                        <p className="text-slate-900 dark:text-white">
+                            {displayDelivery.subject || '—'}
+                        </p>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                        <p className="text-xs font-medium text-slate-500">本文</p>
+                        <pre className="mt-1 whitespace-pre-wrap rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 text-slate-700 dark:text-slate-300 text-xs leading-relaxed">
+                            {displayDelivery.body || '—'}
+                        </pre>
+                    </div>
+                </>
+            )}
+
+            <div className="sm:col-span-2">
+                <p className="text-xs font-medium text-slate-500">添付ファイル名</p>
+                <p className="text-slate-900 dark:text-white">
+                    {displayDelivery.attachment_file_name || '—'}
+                </p>
+            </div>
+        </div>
+    </div>
+)}
 
                     {payment && (
                         <div className="mb-6 rounded-xl border border-green-100 dark:border-green-900/50 bg-green-50/60 dark:bg-green-950/20 p-4">
