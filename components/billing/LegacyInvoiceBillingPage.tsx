@@ -2010,6 +2010,7 @@ const InvoiceDetailModal: React.FC<{
     onMarkAsPaid: (combined: CombinedInvoice) => Promise<void>;
     onInvoiceChanged: (nextTab: Tab) => Promise<void>;
     fetchBillingSettingForInvoice: (combined: CombinedInvoice) => Promise<BillingSettingRow | null>;
+    onRefreshDeliveryFromBillingSetting: (combined: CombinedInvoice) => Promise<DeliveryRecordRow | null>;
 }> = ({
     combined,
     onClose,
@@ -2021,6 +2022,7 @@ const InvoiceDetailModal: React.FC<{
     fetchBillingSettingForInvoice,
 }) => {
     const { invoice, project, customer, delivery, payment } = combined;
+    const displayDelivery = refreshedDelivery || delivery;
     const [details, setDetails] = useState<InvoiceDetailRow[]>([]);
     const [masterMap, setMasterMap] = useState<Record<string, string>>({});
     const [isLoading, setIsLoading] = useState(true);
@@ -2030,6 +2032,7 @@ const InvoiceDetailModal: React.FC<{
     const [isMarkingPaid, setIsMarkingPaid] = useState(false);
     const [isGeneratingExcel, setIsGeneratingExcel] = useState(false);
     const [deliverySentConfirmOpen, setDeliverySentConfirmOpen] = useState(false);
+    const [refreshedDelivery, setRefreshedDelivery] = useState<DeliveryRecordRow | null>(null);
     const [pdfPreviewMode, setPdfPreviewMode] = useState<'preview' | 'issue' | 'issue-auto' | null>(null);
 
     const isIssued = combined.issue?.issue_status === 'issued';
@@ -2146,14 +2149,31 @@ const InvoiceDetailModal: React.FC<{
     };
 
     const handleMarkAsDeliverySent = async () => {
-    setDeliverySentConfirmOpen(true);
+    setIsMarkingDeliverySent(true);
+
+    try {
+        const latestDelivery = await onRefreshDeliveryFromBillingSetting(combined);
+
+        if (!latestDelivery) {
+            return;
+        }
+
+        setRefreshedDelivery(latestDelivery);
+        setDeliverySentConfirmOpen(true);
+    } finally {
+        setIsMarkingDeliverySent(false);
+    }
 };
 
 const executeMarkAsDeliverySent = async () => {
     setIsMarkingDeliverySent(true);
 
     try {
-        await onMarkAsDeliverySent(combined);
+        await onMarkAsDeliverySent({
+            ...combined,
+            delivery: displayDelivery || combined.delivery,
+        });
+
         setDeliverySentConfirmOpen(false);
     } finally {
         setIsMarkingDeliverySent(false);
@@ -2595,19 +2615,19 @@ const executeMarkAsDeliverySent = async () => {
                     <div className="flex justify-between gap-4">
                         <span className="text-slate-500">宛先</span>
                         <span className="font-semibold text-slate-900 text-right">
-                            {delivery?.to_email || '—'}
+                            {displayDelivery?.to_email || '—'}
                         </span>
                     </div>
                     <div className="flex justify-between gap-4">
                         <span className="text-slate-500">件名</span>
                         <span className="font-semibold text-slate-900 text-right">
-                            {delivery?.subject || '—'}
+                            {displayDelivery?.subject || '—'}
                         </span>
                     </div>
                     <div className="flex justify-between gap-4">
                         <span className="text-slate-500">添付</span>
                         <span className="font-semibold text-slate-900 text-right">
-                            {delivery?.attachment_file_name || issue?.pdf_storage_path || '—'}
+                            {displayDelivery?.attachment_file_name || issue?.pdf_storage_path || '—'}
                         </span>
                     </div>
                 </div>
@@ -3705,6 +3725,103 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     [loadInvoiceData],
 );
 
+const refreshDeliveryFromBillingSetting = useCallback(
+    async (combined: CombinedInvoice): Promise<DeliveryRecordRow | null> => {
+        const supabase = getSupabase();
+
+        try {
+            if (!combined.issue?.id) {
+                throw new Error('発行履歴が見つかりません。先に請求書を発行してください。');
+            }
+
+            if (!combined.delivery?.id) {
+                throw new Error('送付待ちレコードが見つかりません。先に送付設定を作成してください。');
+            }
+
+            if (combined.delivery.delivery_status === 'sent') {
+                throw new Error('すでに送付済みのため、顧客別設定は再反映できません。');
+            }
+
+            const setting = await fetchBillingSettingForInvoice(combined);
+
+            if (!setting) {
+                setBillingSettingMissingModal({
+                    isOpen: true,
+                    invoice: combined,
+                    message: 'この顧客の有効な顧客別設定が見つかりません。先に顧客別設定を登録してください。',
+                });
+                return null;
+            }
+
+            const method = setting.delivery_method || 'email';
+
+            if (method === 'email' && !setting.billing_email) {
+                setBillingSettingMissingModal({
+                    isOpen: true,
+                    invoice: combined,
+                    message: '送信方法がメールですが、請求先メールアドレスが設定されていません。顧客別設定を確認してください。',
+                });
+                return null;
+            }
+
+            const subjectTemplate =
+                setting.email_subject_template || DEFAULT_EMAIL_SUBJECT_TEMPLATE;
+
+            const bodyTemplate =
+                setting.email_body_template || DEFAULT_EMAIL_BODY_TEMPLATE;
+
+            const attachmentNameTemplate =
+                setting.attachment_name_template || DEFAULT_ATTACHMENT_NAME_TEMPLATE;
+
+            const payload = {
+                delivery_method: method,
+                delivery_status: 'pending',
+                to_email: method === 'email' ? setting.billing_email : null,
+                cc_email: method === 'email' ? setting.billing_cc : null,
+                bcc_email: method === 'email' ? setting.billing_bcc : null,
+                subject: method === 'email' ? renderTemplate(subjectTemplate, combined) : null,
+                body: method === 'email' ? renderTemplate(bodyTemplate, combined) : null,
+                attachment_file_name: renderTemplate(attachmentNameTemplate, combined),
+                error_message: null,
+                sent_at: null,
+            };
+
+            const { data, error } = await supabase
+                .from('invoice_delivery_records')
+                .update(payload)
+                .eq('id', combined.delivery.id)
+                .select('id, legacy_invoice_id, invoice_no, issue_record_id, delivery_method, delivery_status, to_email, cc_email, bcc_email, subject, body, attachment_file_name, sent_at, error_message')
+                .single();
+
+            if (error) {
+                logSupabaseError('invoice_delivery_records refresh from billing setting', error);
+                throw error;
+            }
+
+            setError(null);
+
+            return data as DeliveryRecordRow;
+        } catch (e: any) {
+            console.error('[LegacyInvoiceBillingPage] failed to refresh delivery from billing setting', {
+                message: e?.message,
+                details: e?.details,
+                hint: e?.hint,
+                code: e?.code,
+                raw: e,
+            });
+
+            setError(
+                e?.message
+                    ? `送付情報の再反映に失敗しました: ${e.message}`
+                    : '送付情報の再反映に失敗しました。',
+            );
+
+            return null;
+        }
+    },
+    [fetchBillingSettingForInvoice],
+);
+
     const handleMarkAsPaid = useCallback(
         async (combined: CombinedInvoice) => {
             const supabase = getSupabase();
@@ -3959,6 +4076,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
         onMarkAsDeliverySent={handleMarkAsDeliverySent}
         onMarkAsPaid={handleMarkAsPaid}
         fetchBillingSettingForInvoice={fetchBillingSettingForInvoice}
+        onRefreshDeliveryFromBillingSetting={refreshDeliveryFromBillingSetting}
         onInvoiceChanged={async (nextTab) => {
             setSelected(null);
             await loadInvoiceData();
