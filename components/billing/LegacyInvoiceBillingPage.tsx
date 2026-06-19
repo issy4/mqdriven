@@ -2029,6 +2029,7 @@ const InvoiceDetailModal: React.FC<{
     const [isMarkingDeliverySent, setIsMarkingDeliverySent] = useState(false);
     const [isMarkingPaid, setIsMarkingPaid] = useState(false);
     const [isGeneratingExcel, setIsGeneratingExcel] = useState(false);
+    const [deliverySentConfirmOpen, setDeliverySentConfirmOpen] = useState(false);
     const [pdfPreviewMode, setPdfPreviewMode] = useState<'preview' | 'issue' | 'issue-auto' | null>(null);
 
     const isIssued = combined.issue?.issue_status === 'issued';
@@ -2145,18 +2146,19 @@ const InvoiceDetailModal: React.FC<{
     };
 
     const handleMarkAsDeliverySent = async () => {
-        const label = deliveryDoneButtonLabel(delivery?.delivery_method);
-        const ok = window.confirm(
-            `請求番号 ${invoice.invoice_id || '—'} を「${label.replace('にする', '')}」として登録します。\n\nこの処理では実際のメール送信は行わず、送付済みステータスに更新します。よろしいですか？`,
-        );
-        if (!ok) return;
-        setIsMarkingDeliverySent(true);
-        try {
-            await onMarkAsDeliverySent(combined);
-        } finally {
-            setIsMarkingDeliverySent(false);
-        }
-    };
+    setDeliverySentConfirmOpen(true);
+};
+
+const executeMarkAsDeliverySent = async () => {
+    setIsMarkingDeliverySent(true);
+
+    try {
+        await onMarkAsDeliverySent(combined);
+        setDeliverySentConfirmOpen(false);
+    } finally {
+        setIsMarkingDeliverySent(false);
+    }
+};
 
     const handleMarkAsPaid = async () => {
         const ok = window.confirm(
@@ -2564,6 +2566,73 @@ const InvoiceDetailModal: React.FC<{
             await onInvoiceChanged(nextTab);
         }}
     />
+)}
+
+{deliverySentConfirmOpen && (
+    <div className="fixed inset-0 z-[100] bg-slate-950/60 flex items-center justify-center p-4">
+        <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200">
+            <div className="p-6 border-b border-slate-200">
+                <h3 className="text-lg font-bold text-slate-900">
+                    メール送信済みにしますか？
+                </h3>
+                <p className="mt-2 text-sm text-slate-500">
+                    この操作では実際のメール送信は行いません。別途メール送信が完了していることを確認したうえで、送付済みステータスに更新します。
+                </p>
+            </div>
+
+            <div className="p-6 space-y-4 text-sm">
+                <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-2">
+                    <div className="flex justify-between gap-4">
+                        <span className="text-slate-500">請求番号</span>
+                        <span className="font-semibold text-slate-900">{invoice.invoice_id || '—'}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                        <span className="text-slate-500">顧客名</span>
+                        <span className="font-semibold text-slate-900 text-right">
+                            {customer?.customer_name || '—'}
+                        </span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                        <span className="text-slate-500">宛先</span>
+                        <span className="font-semibold text-slate-900 text-right">
+                            {delivery?.to_email || '—'}
+                        </span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                        <span className="text-slate-500">件名</span>
+                        <span className="font-semibold text-slate-900 text-right">
+                            {delivery?.subject || '—'}
+                        </span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                        <span className="text-slate-500">添付</span>
+                        <span className="font-semibold text-slate-900 text-right">
+                            {delivery?.attachment_file_name || issue?.pdf_storage_path || '—'}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div className="p-6 border-t border-slate-200 flex justify-end gap-3">
+                <button
+                    type="button"
+                    onClick={() => setDeliverySentConfirmOpen(false)}
+                    disabled={isMarkingDeliverySent}
+                    className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200 disabled:opacity-60"
+                >
+                    キャンセル
+                </button>
+                <button
+                    type="button"
+                    onClick={executeMarkAsDeliverySent}
+                    disabled={isMarkingDeliverySent}
+                    className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 disabled:bg-slate-400"
+                >
+                    {isMarkingDeliverySent ? '更新中...' : 'メール送信済みにする'}
+                </button>
+            </div>
+        </div>
+    </div>
 )}
         </div>
     );
