@@ -3070,7 +3070,7 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
             const { data: issueData, error: issueError } = await supabase
                 .from('invoice_issue_records')
-                .select('id, legacy_invoice_id, invoice_no, issue_status, issued_at, issue_count');
+                .select('id, legacy_invoice_id, invoice_no, issue_status, issued_at, issue_count, pdf_storage_path, pdf_url');
 
             if (issueError) {
                 logSupabaseError('invoice_issue_records', issueError);
@@ -3115,12 +3115,23 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 });
                 setPayments(paymentMap);
             }
-        } catch (e) {
-            console.error('[LegacyInvoiceBillingPage] failed to load legacy invoices', e);
-            setError(e instanceof Error ? e.message : '請求データの取得に失敗しました。');
-        } finally {
-            setIsLoading(false);
-        }
+        } catch (e: any) {
+    console.error('[LegacyInvoiceBillingPage] failed to load legacy invoices', {
+        message: e?.message,
+        details: e?.details,
+        hint: e?.hint,
+        code: e?.code,
+        raw: e,
+    });
+
+    setError(
+        e?.message
+            ? `請求データの取得に失敗しました: ${e.message}`
+            : '請求データの取得に失敗しました。'
+    );
+} finally {
+    setIsLoading(false);
+}
     }, []);
 
     const loadSettings = useCallback(async () => {
@@ -3508,36 +3519,80 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     );
 
     const handleMarkAsDeliverySent = useCallback(
-        async (combined: CombinedInvoice) => {
-            const supabase = getSupabase();
+    async (combined: CombinedInvoice) => {
+        const supabase = getSupabase();
 
-            try {
-                if (!combined.delivery?.id) {
-                    throw new Error('送付待ちレコードが見つかりません。');
-                }
+        try {
+            const { invoice, issue, delivery } = combined;
 
-                const now = new Date().toISOString();
-                const { error } = await supabase
-                    .from('invoice_delivery_records')
-                    .update({ delivery_status: 'sent', sent_at: now, error_message: null })
-                    .eq('id', combined.delivery.id);
-
-                if (error) {
-                    logSupabaseError('invoice_delivery_records update sent', error);
-                    throw error;
-                }
-
-                setSelected(null);
-                await loadInvoiceData();
-                setActiveTab('sent');
-            } catch (e) {
-                console.error('[LegacyInvoiceBillingPage] failed to mark delivery as sent', e);
-                setError(e instanceof Error ? e.message : '送付済み登録に失敗しました。');
-                throw e;
+            if (!invoice.invoice_id) {
+                throw new Error('請求番号が取得できないため、送付済みにできません。');
             }
-        },
-        [loadInvoiceData],
-    );
+
+            if (!issue?.id) {
+                throw new Error('発行履歴が見つかりません。先に請求書を発行してください。');
+            }
+
+            if (!issue.pdf_storage_path) {
+                throw new Error('PDF保存先が見つかりません。先に請求書PDFを保存してください。');
+            }
+
+            if (!delivery?.id) {
+                throw new Error('送付待ちレコードが見つかりません。先に送付設定を作成してください。');
+            }
+
+            if (delivery.delivery_status === 'sent') {
+                throw new Error('この請求書はすでに送付済みです。');
+            }
+
+            if (delivery.delivery_status !== 'pending') {
+                throw new Error(
+                    `送付待ちではないため、送付済みにできません。現在の状態: ${
+                        delivery.delivery_status || '未設定'
+                    }`,
+                );
+            }
+
+            const now = new Date().toISOString();
+
+            const { error } = await supabase
+                .from('invoice_delivery_records')
+                .update({
+                    delivery_status: 'sent',
+                    sent_at: now,
+                    error_message: null,
+                })
+                .eq('id', delivery.id);
+
+            if (error) {
+                logSupabaseError('invoice_delivery_records update sent', error);
+                throw error;
+            }
+
+            setSelected(null);
+            await loadInvoiceData();
+            setActiveTab('sent');
+            setError(null);
+        } catch (e: any) {
+            console.error('[LegacyInvoiceBillingPage] failed to mark delivery as sent', {
+                message: e?.message,
+                details: e?.details,
+                hint: e?.hint,
+                code: e?.code,
+                raw: e,
+            });
+
+            setError(
+                e?.message
+                    ? `送付済み登録に失敗しました: ${e.message}`
+                    : '送付済み登録に失敗しました。',
+            );
+
+            throw e;
+        }
+    },
+    [loadInvoiceData],
+);
 
     const handleMarkAsPaid = useCallback(
         async (combined: CombinedInvoice) => {
