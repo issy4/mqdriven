@@ -3432,13 +3432,35 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
                 const setting = await fetchBillingSettingForInvoice(combined);
                 if (!setting) {
-                    throw new Error('この顧客の有効な顧客別設定が見つかりません。先に顧客別設定を登録してください。');
-                }
+    setSelected(null);
+    await loadInvoiceData();
+    setActiveTab('issued');
+    setError('');
+
+    setBillingSettingMissingModal({
+        isOpen: true,
+        invoice: combined,
+        message: 'この顧客の有効な顧客別設定が見つかりません。先に顧客別設定を登録してください。',
+    });
+
+    return;
+}
 
                 const method = setting.delivery_method || 'email';
                 if (method === 'email' && !setting.billing_email) {
-                    throw new Error('送信方法がメールですが、請求先メールが設定されていません。');
-                }
+    setSelected(null);
+    await loadInvoiceData();
+    setActiveTab('issued');
+    setError('');
+
+    setBillingSettingMissingModal({
+        isOpen: true,
+        invoice: combined,
+        message: '送信方法がメールですが、請求先メールアドレスが設定されていません。顧客別設定を確認してください。',
+    });
+
+    return;
+}
 
                 const subjectTemplate = setting.email_subject_template || DEFAULT_EMAIL_SUBJECT_TEMPLATE;
                 const bodyTemplate = setting.email_body_template || DEFAULT_EMAIL_BODY_TEMPLATE;
