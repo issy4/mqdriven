@@ -2180,6 +2180,12 @@ const executeMarkAsDeliverySent = async () => {
     try {
         const supabase = getSupabase();
 
+        console.log('[InvoiceDetailModal] send invoice email', {
+    deliveryId: displayDelivery?.id,
+    invoiceNo: invoice.invoice_id,
+    delivery: displayDelivery,
+});
+
         const { data, error } = await supabase.functions.invoke(
             'send-invoice-email',
             {
