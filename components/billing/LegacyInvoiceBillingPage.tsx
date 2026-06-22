@@ -2170,15 +2170,52 @@ const InvoiceDetailModal: React.FC<{
 };
 
 const executeMarkAsDeliverySent = async () => {
+    if (!displayDelivery?.id) {
+        window.alert('送付待ちレコードが見つかりません。');
+        return;
+    }
+
     setIsMarkingDeliverySent(true);
 
     try {
-        await onMarkAsDeliverySent({
-            ...combined,
-            delivery: displayDelivery || combined.delivery,
-        });
+        const supabase = getSupabase();
+
+        const { data, error } = await supabase.functions.invoke(
+            'send-invoice-email',
+            {
+                body: {
+                    deliveryId: displayDelivery.id,
+                },
+            },
+        );
+
+        if (error) {
+            throw error;
+        }
+
+        if (!data?.ok) {
+            throw new Error(data?.error || 'メール送信に失敗しました。');
+        }
 
         setDeliverySentConfirmOpen(false);
+
+        await onInvoiceChanged('sent');
+
+        window.alert('メールを送信しました。送付済みに更新しました。');
+    } catch (e: any) {
+        console.error('[InvoiceDetailModal] failed to send invoice email', {
+            message: e?.message,
+            details: e?.details,
+            hint: e?.hint,
+            context: e?.context,
+            raw: e,
+        });
+
+        window.alert(
+            e?.message
+                ? `メール送信に失敗しました。\n${e.message}`
+                : 'メール送信に失敗しました。',
+        );
     } finally {
         setIsMarkingDeliverySent(false);
     }
@@ -2615,10 +2652,10 @@ const executeMarkAsDeliverySent = async () => {
         <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200">
             <div className="p-6 border-b border-slate-200">
                 <h3 className="text-lg font-bold text-slate-900">
-                    メール送信済みにしますか？
+                    メールを送信しますか？
                 </h3>
                 <p className="mt-2 text-sm text-slate-500">
-                    この操作では実際のメール送信は行いません。別途メール送信が完了していることを確認したうえで、送付済みステータスに更新します。
+                    顧客別請求設定の最新内容を反映したうえで、請求書PDFを添付して実際にメールを送信します。
                 </p>
             </div>
 
@@ -2665,13 +2702,13 @@ const executeMarkAsDeliverySent = async () => {
                     キャンセル
                 </button>
                 <button
-                    type="button"
-                    onClick={executeMarkAsDeliverySent}
-                    disabled={isMarkingDeliverySent}
-                    className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 disabled:bg-slate-400"
-                >
-                    {isMarkingDeliverySent ? '更新中...' : 'メール送信済みにする'}
-                </button>
+    type="button"
+    onClick={executeMarkAsDeliverySent}
+    disabled={isMarkingDeliverySent}
+    className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 disabled:bg-slate-400"
+>
+    {isMarkingDeliverySent ? '送信中...' : 'メールを送信'}
+</button>
             </div>
         </div>
     </div>
