@@ -390,19 +390,19 @@ const CustomerInvoiceManagementPage: React.FC = () => {
             const supabase = getSupabase();
 
             let query = supabase
-                .from('invoices_legacy')
-                .select(
-                    'row_uuid, invoice_id, order_id, project_id, project_uuid, customer_uuid, delivery_date, specification, subtotal, consumption, total, note, pattern_name, status, create_date',
-                )
-                .order('create_date', { ascending: false })
-.limit(2000);
+    .from('invoices_legacy')
+    .select(
+        'row_uuid, invoice_id, order_id, project_id, project_uuid, customer_uuid, delivery_date, delivery_date_value, specification, subtotal, consumption, total, note, pattern_name, status, create_date',
+    )
+    .order('delivery_date_value', { ascending: false, nullsFirst: false })
+    .limit(2000);
 
 if (dateFrom) {
-    query = query.gte('create_date', `${dateFrom}T00:00:00`);
+    query = query.gte('delivery_date_value', dateFrom);
 }
 
 if (dateTo) {
-    query = query.lte('create_date', `${dateTo}T23:59:59`);
+    query = query.lte('delivery_date_value', dateTo);
 }
 
             const { data: invoiceData, error: invoicesError } = await query;
