@@ -338,7 +338,7 @@ const deliveryStatusLabel = (method: string | null | undefined, status: string |
 const deliveryDoneButtonLabel = (method: string | null | undefined): string => {
     if (method === 'post') return '郵送済みにする';
     if (method === 'manual') return '手動対応済みにする';
-    return 'メール送信済みにする';
+    return 'メールを送信';
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -2179,6 +2179,12 @@ const executeMarkAsDeliverySent = async () => {
 
     try {
         const supabase = getSupabase();
+
+        console.log('[InvoiceDetailModal] send invoice email', {
+    deliveryId: displayDelivery?.id,
+    invoiceNo: invoice.invoice_id,
+    delivery: displayDelivery,
+});
 
         const { data, error } = await supabase.functions.invoke(
             'send-invoice-email',
