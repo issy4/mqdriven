@@ -3347,32 +3347,58 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     }, [invoices, projects, customers, users, issues, deliveries, payments]);
 
     const filteredInvoices = useMemo(() => {
-        let rows = combinedInvoices;
+    let rows = combinedInvoices;
 
-        if (activeTab === 'unissued') {
-            rows = rows.filter((r) => !r.issue || !r.issue.issue_status || r.issue.issue_status === 'not_issued' || r.issue.issue_status === 'draft');
-        } else if (activeTab === 'issued') {
-            rows = rows.filter((r) => r.issue?.issue_status === 'issued');
-        } else if (activeTab === 'pending_send') {
-            rows = rows.filter((r) => r.issue?.issue_status === 'issued' && r.delivery?.delivery_status === 'pending');
-        } else if (activeTab === 'sent') {
-            rows = rows.filter((r) => r.delivery?.delivery_status === 'sent');
-        } else if (activeTab === 'paid') {
-            rows = rows.filter((r) => r.payment?.payment_status === 'paid' || r.payment?.payment_status === 'partial');
-        }
+    if (activeTab === 'unissued') {
+        rows = rows.filter(
+            (r) =>
+                !r.issue ||
+                !r.issue.issue_status ||
+                r.issue.issue_status === 'not_issued' ||
+                r.issue.issue_status === 'draft',
+        );
+    } else if (activeTab === 'issued') {
+        // 発行済み・未送付設定
+        rows = rows.filter(
+            (r) =>
+                r.issue?.issue_status === 'issued' &&
+                !r.delivery,
+        );
+    } else if (activeTab === 'pending_send') {
+        // 送付待ち
+        rows = rows.filter(
+            (r) =>
+                r.issue?.issue_status === 'issued' &&
+                r.delivery?.delivery_status === 'pending',
+        );
+    } else if (activeTab === 'sent') {
+        // 送付済み
+        rows = rows.filter(
+            (r) =>
+                r.delivery?.delivery_status === 'sent',
+        );
+    } else if (activeTab === 'paid') {
+        rows = rows.filter(
+            (r) =>
+                r.payment?.payment_status === 'paid' ||
+                r.payment?.payment_status === 'partial',
+        );
+    }
 
-        if (searchTerm.trim()) {
-            const q = searchTerm.trim().toLowerCase();
-            rows = rows.filter((r) =>
+    if (searchTerm.trim()) {
+        const q = searchTerm.trim().toLowerCase();
+
+        rows = rows.filter(
+            (r) =>
                 (r.invoice.invoice_id || '').toLowerCase().includes(q) ||
                 invoiceOrderCode(r).toLowerCase().includes(q) ||
                 invoiceCustomerName(r).toLowerCase().includes(q) ||
                 invoiceProductName(r).toLowerCase().includes(q),
-            );
-        }
+        );
+    }
 
-        return rows;
-    }, [combinedInvoices, activeTab, searchTerm]);
+    return rows;
+}, [combinedInvoices, activeTab, searchTerm]);
 
     const filteredSettings = useMemo(() => {
         if (!searchTerm.trim()) return settings;
