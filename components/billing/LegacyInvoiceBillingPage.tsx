@@ -2799,11 +2799,13 @@ const BillingSettingModal: React.FC<{
             const supabase = getSupabase();
             const safeKeyword = q.replace(/[%_]/g, '');
             const { data, error } = await supabase
-                .from('customers')
-                .select('id, customer_code, customer_name, post_no, address_1, address_2')
-                .or(`customer_code.ilike.%${safeKeyword}%,customer_name.ilike.%${safeKeyword}%`)
-                .order('customer_code', { ascending: true })
-                .limit(20);
+    .from('customers')
+    .select('id, customer_code, customer_name, post_no, address_1, address_2')
+    .not('customer_code', 'is', null)
+    .neq('customer_code', '')
+    .or(`customer_code.ilike.%${safeKeyword}%,customer_name.ilike.%${safeKeyword}%`)
+    .order('customer_code', { ascending: true })
+    .limit(100);
 
             if (error) {
                 logSupabaseError('customers search', error);
@@ -2941,17 +2943,36 @@ const BillingSettingModal: React.FC<{
                         </div>
 
                         {customerSearchResults.length > 0 && (
-                            <div className="mt-2 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
-                                {customerSearchResults.map((customer) => (
-                                    <button key={customer.id} type="button" onClick={() => selectCustomer(customer)} className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 border-b last:border-b-0 border-slate-100 dark:border-slate-700">
-                                        <div className="font-semibold text-slate-900 dark:text-white">
-                                            {customer.customer_code || '—'}　{customer.customer_name || '—'}
-                                        </div>
-                                        <div className="text-xs text-slate-500">{customerAddress(customer)}</div>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
+    <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700">
+            {customerSearchResults.map((customer) => (
+                <button
+                    key={customer.id}
+                    type="button"
+                    onClick={() => selectCustomer(customer)}
+                    className="w-full px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                >
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                        <span className="shrink-0">{customer.customer_code}</span>
+                        <span>{customer.customer_name}</span>
+                    </div>
+
+                    {(customer.post_no || customer.address_1 || customer.address_2) && (
+                        <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                            {[customer.post_no && `〒${customer.post_no}`, customer.address_1, customer.address_2]
+                                .filter(Boolean)
+                                .join(' ')}
+                        </div>
+                    )}
+                </button>
+            ))}
+        </div>
+
+        <div className="border-t border-slate-200 dark:border-slate-700 px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+            検索結果：{customerSearchResults.length}件
+        </div>
+    </div>
+)}
 
                         <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-900/50">
                             <div className="flex justify-between items-start gap-3">
