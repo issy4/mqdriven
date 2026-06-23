@@ -1771,7 +1771,7 @@ const renderInvoiceCoverPage = () => {
             disabled={isSavingPdf || !combined.issue?.id}
             className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400"
         >
-            {isSavingPdf ? 'PDF保存中...' : 'PDFを再保存'}
+            {isSavingPdf ? 'PDF保存中...' : 'Storageに再保存'}
         </button>
     )}
 
@@ -2153,16 +2153,25 @@ const InvoiceDetailModal: React.FC<{
     };
 
     const handleMarkAsDeliverySent = async () => {
+    if (!displayDelivery) {
+        window.alert('送付待ちレコードが見つかりません。');
+        return;
+    }
+
     setIsMarkingDeliverySent(true);
 
     try {
-        const latestDelivery = await onRefreshDeliveryFromBillingSetting(combined);
+        // メールだけは、送信前に最新の顧客別請求設定を反映する
+        if (displayDelivery.delivery_method === 'email') {
+            const latestDelivery = await onRefreshDeliveryFromBillingSetting(combined);
 
-        if (!latestDelivery) {
-            return;
+            if (!latestDelivery) {
+                return;
+            }
+
+            setRefreshedDelivery(latestDelivery);
         }
 
-        setRefreshedDelivery(latestDelivery);
         setDeliverySentConfirmOpen(true);
     } finally {
         setIsMarkingDeliverySent(false);
@@ -2178,49 +2187,47 @@ const executeMarkAsDeliverySent = async () => {
     setIsMarkingDeliverySent(true);
 
     try {
-        const supabase = getSupabase();
+        if (displayDelivery.delivery_method === 'email') {
+            const supabase = getSupabase();
 
-        console.log('[InvoiceDetailModal] send invoice email', {
-    deliveryId: displayDelivery?.id,
-    invoiceNo: invoice.invoice_id,
-    delivery: displayDelivery,
-});
-
-        const { data, error } = await supabase.functions.invoke(
-            'send-invoice-email',
-            {
-                body: {
-                    deliveryId: displayDelivery.id,
+            const { data, error } = await supabase.functions.invoke(
+                'send-invoice-email',
+                {
+                    body: {
+                        deliveryId: displayDelivery.id,
+                    },
                 },
-            },
-        );
+            );
 
-        if (error) {
-            throw error;
-        }
+            if (error) {
+                throw error;
+            }
 
-        if (!data?.ok) {
-            throw new Error(data?.error || 'メール送信に失敗しました。');
+            if (!data?.ok) {
+                throw new Error(data?.error || 'メール送信に失敗しました。');
+            }
+
+            window.alert('メールを送信しました。送付済みに更新しました。');
+        } else {
+            // 郵送・手動はメール送信せず、送付済み状態だけ更新する
+            await onMarkAsDeliverySent(combined);
+
+            if (displayDelivery.delivery_method === 'post') {
+                window.alert('郵送済みに更新しました。');
+            } else {
+                window.alert('手動対応済みに更新しました。');
+            }
         }
 
         setDeliverySentConfirmOpen(false);
-
         await onInvoiceChanged('sent');
-
-        window.alert('メールを送信しました。送付済みに更新しました。');
     } catch (e: any) {
-        console.error('[InvoiceDetailModal] failed to send invoice email', {
-            message: e?.message,
-            details: e?.details,
-            hint: e?.hint,
-            context: e?.context,
-            raw: e,
-        });
+        console.error('[InvoiceDetailModal] delivery complete failed', e);
 
         window.alert(
             e?.message
-                ? `メール送信に失敗しました。\n${e.message}`
-                : 'メール送信に失敗しました。',
+                ? `処理に失敗しました。\n${e.message}`
+                : '処理に失敗しました。',
         );
     } finally {
         setIsMarkingDeliverySent(false);
@@ -2350,6 +2357,27 @@ const executeMarkAsDeliverySent = async () => {
             setIsGeneratingExcel(false);
         }
     };
+
+    const deliveryConfirmTitle =
+    displayDelivery?.delivery_method === 'email'
+        ? 'メールを送信しますか？'
+        : displayDelivery?.delivery_method === 'post'
+            ? '郵送済みにしますか？'
+            : '手動対応済みにしますか？';
+
+const deliveryConfirmDescription =
+    displayDelivery?.delivery_method === 'email'
+        ? '顧客別請求設定の最新内容を反映したうえで、請求書PDFを添付して実際にメールを送信します。'
+        : displayDelivery?.delivery_method === 'post'
+            ? '請求書を郵送したこととして、送付済みに更新します。実際のメール送信は行いません。'
+            : '手動対応が完了したこととして、送付済みに更新します。実際のメール送信は行いません。';
+
+const deliveryConfirmButtonLabel =
+    displayDelivery?.delivery_method === 'email'
+        ? 'メールを送信'
+        : displayDelivery?.delivery_method === 'post'
+            ? '郵送済みにする'
+            : '手動対応済みにする';
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
@@ -2621,7 +2649,7 @@ const executeMarkAsDeliverySent = async () => {
                     {isIssued && isPendingDelivery && (
                         <button onClick={handleMarkAsDeliverySent} disabled={isMarkingDeliverySent} className="flex items-center gap-2 bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 disabled:bg-slate-400">
                             {isMarkingDeliverySent ? <Loader className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
-                            {deliveryDoneButtonLabel(delivery?.delivery_method)}
+                            {deliveryDoneButtonLabel(displayDelivery?.delivery_method)}
                         </button>
                     )}
 
@@ -2653,17 +2681,18 @@ const executeMarkAsDeliverySent = async () => {
     />
 )}
 
+
 {deliverySentConfirmOpen && (
     <div className="fixed inset-0 z-[100] bg-slate-950/60 flex items-center justify-center p-4">
         <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200">
             <div className="p-6 border-b border-slate-200">
-                <h3 className="text-lg font-bold text-slate-900">
-                    メールを送信しますか？
-                </h3>
-                <p className="mt-2 text-sm text-slate-500">
-                    顧客別請求設定の最新内容を反映したうえで、請求書PDFを添付して実際にメールを送信します。
-                </p>
-            </div>
+    <h3 className="text-lg font-bold text-slate-900">
+        {deliveryConfirmTitle}
+    </h3>
+    <p className="mt-2 text-sm text-slate-500">
+        {deliveryConfirmDescription}
+    </p>
+</div>
 
             <div className="p-6 space-y-4 text-sm">
                 <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-2">
@@ -2677,18 +2706,23 @@ const executeMarkAsDeliverySent = async () => {
                             {customer?.customer_name || '—'}
                         </span>
                     </div>
-                    <div className="flex justify-between gap-4">
-                        <span className="text-slate-500">宛先</span>
-                        <span className="font-semibold text-slate-900 text-right">
-                            {displayDelivery?.to_email || '—'}
-                        </span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                        <span className="text-slate-500">件名</span>
-                        <span className="font-semibold text-slate-900 text-right">
-                            {displayDelivery?.subject || '—'}
-                        </span>
-                    </div>
+                    {displayDelivery?.delivery_method === 'email' && (
+    <>
+        <div className="flex justify-between gap-4">
+            <span className="text-slate-500">宛先</span>
+            <span className="font-semibold text-slate-900 text-right">
+                {displayDelivery.to_email || '—'}
+            </span>
+        </div>
+
+        <div className="flex justify-between gap-4">
+            <span className="text-slate-500">件名</span>
+            <span className="font-semibold text-slate-900 text-right">
+                {displayDelivery.subject || '—'}
+            </span>
+        </div>
+    </>
+)}
                     <div className="flex justify-between gap-4">
                         <span className="text-slate-500">添付</span>
                         <span className="font-semibold text-slate-900 text-right">
@@ -2713,7 +2747,7 @@ const executeMarkAsDeliverySent = async () => {
     disabled={isMarkingDeliverySent}
     className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 disabled:bg-slate-400"
 >
-    {isMarkingDeliverySent ? '送信中...' : 'メールを送信'}
+    {isMarkingDeliverySent ? '処理中...' : deliveryConfirmButtonLabel}
 </button>
             </div>
         </div>
