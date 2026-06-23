@@ -3365,19 +3365,18 @@ const LegacyInvoiceBillingPage: React.FC = () => {
                 !r.delivery,
         );
     } else if (activeTab === 'pending_send') {
-        // 送付待ち
-        rows = rows.filter(
-            (r) =>
-                r.issue?.issue_status === 'issued' &&
-                r.delivery?.delivery_status === 'pending',
-        );
-    } else if (activeTab === 'sent') {
-        // 送付済み
-        rows = rows.filter(
-            (r) =>
-                r.delivery?.delivery_status === 'sent',
-        );
-    } else if (activeTab === 'paid') {
+    rows = rows.filter(
+        (r) =>
+            r.issue?.issue_status === 'issued' &&
+            ['pending', 'failed'].includes(r.delivery?.delivery_status || ''),
+    );
+} else if (activeTab === 'sent') {
+    rows = rows.filter(
+        (r) =>
+            r.delivery?.delivery_status === 'sent' &&
+            !['paid', 'partial'].includes(r.payment?.payment_status || ''),
+    );
+} else if (activeTab === 'paid') {
         rows = rows.filter(
             (r) =>
                 r.payment?.payment_status === 'paid' ||
