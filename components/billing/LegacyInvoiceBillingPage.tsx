@@ -1771,7 +1771,7 @@ const renderInvoiceCoverPage = () => {
             disabled={isSavingPdf || !combined.issue?.id}
             className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400"
         >
-            {isSavingPdf ? 'PDF保存中...' : 'PDFを再保存'}
+            {isSavingPdf ? 'PDF保存中...' : 'Storageに再保存'}
         </button>
     )}
 
