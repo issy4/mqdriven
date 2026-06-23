@@ -779,11 +779,11 @@ if (dateTo) {
                     </div>
 
                     <div className="lg:col-span-2">
-                        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={`${inputClass} w-full`} title="請求作成日 From" />
+                        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={`${inputClass} w-full`} title="納品日 From" />
                     </div>
 
                     <div className="lg:col-span-2">
-                        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={`${inputClass} w-full`} title="請求作成日 To" />
+                        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={`${inputClass} w-full`} title="納品日 To" />
                     </div>
 
                     <div className="lg:col-span-1">
