@@ -2367,7 +2367,7 @@ const executeMarkAsDeliverySent = async () => {
 
 const deliveryConfirmDescription =
     displayDelivery?.delivery_method === 'email'
-        ? '顧客別請求設定の最新内容を反映したうえで、請求書PDFを添付して実際にメールを送信します。'
+        ? '顧客別請求設定の最新内容を反映したうえで、閲覧期限付きの請求書URLを発行してメールを送信します。PDFは添付されません。'
         : displayDelivery?.delivery_method === 'post'
             ? '請求書を郵送したこととして、送付済みに更新します。実際のメール送信は行いません。'
             : '手動対応が完了したこととして、送付済みに更新します。実際のメール送信は行いません。';
@@ -2724,11 +2724,18 @@ const deliveryConfirmButtonLabel =
     </>
 )}
                     <div className="flex justify-between gap-4">
-                        <span className="text-slate-500">添付</span>
-                        <span className="font-semibold text-slate-900 text-right">
-                            {displayDelivery?.attachment_file_name || issue?.pdf_storage_path || '—'}
-                        </span>
-                    </div>
+    <span className="text-slate-500">共有方法</span>
+    <span className="font-semibold text-slate-900 text-right">
+        閲覧期限付きURL
+    </span>
+</div>
+
+<div className="flex justify-between gap-4">
+    <span className="text-slate-500">PDF添付</span>
+    <span className="font-semibold text-slate-900 text-right">
+        なし
+    </span>
+</div>
                 </div>
             </div>
 
