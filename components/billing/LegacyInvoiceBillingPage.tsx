@@ -2482,19 +2482,35 @@ const deliveryConfirmButtonLabel =
 
                     <div className="sm:col-span-2">
                         <p className="text-xs font-medium text-slate-500">本文</p>
-                        <pre className="mt-1 whitespace-pre-wrap rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 text-slate-700 dark:text-slate-300 text-xs leading-relaxed">
-                            {displayDelivery.body || '—'}
-                        </pre>
+
+{displayDelivery.delivery_method === 'email' &&
+displayDelivery.delivery_status === 'sent' ? (
+    <div className="mt-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 text-xs leading-relaxed text-slate-700 dark:text-slate-300">
+        閲覧期限付きの請求書URLをメールで送信しました。<br />
+        PDFファイルはメールに添付していません。
+    </div>
+) : (
+    <pre className="mt-1 whitespace-pre-wrap rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 text-xs leading-relaxed text-slate-700 dark:text-slate-300">
+        {displayDelivery.body || '—'}
+    </pre>
+)}
                     </div>
                 </>
             )}
 
             <div className="sm:col-span-2">
-                <p className="text-xs font-medium text-slate-500">添付ファイル名</p>
-                <p className="text-slate-900 dark:text-white">
-                    {displayDelivery.attachment_file_name || '—'}
-                </p>
-            </div>
+    <p className="text-xs font-medium text-slate-500">共有方法</p>
+    <p className="text-slate-900 dark:text-white">
+        閲覧期限付きURL
+    </p>
+</div>
+
+<div className="sm:col-span-2">
+    <p className="text-xs font-medium text-slate-500">PDF添付</p>
+    <p className="text-slate-900 dark:text-white">
+        なし
+    </p>
+</div>
         </div>
     </div>
 )}
