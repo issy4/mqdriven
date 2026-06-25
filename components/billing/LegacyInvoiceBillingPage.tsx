@@ -107,6 +107,9 @@ interface IssueRecordRow {
     pdf_storage_path?: string | null;
     pdf_url?: string | null;
     excel_storage_path?: string | null;
+    revision_no?: number | null;
+    is_current?: boolean | null;
+    revision_reason?: string | null;
 }
 
 interface DeliveryRecordRow {
@@ -423,6 +426,8 @@ const InvoicePdfPreviewModal: React.FC<{
     fetchBillingSettingForInvoice,
 }) => {
     const { invoice, project, customer, salesUser } = combined;
+
+    const isDeliverySent = combined.delivery?.delivery_status === 'sent';
 
     const [isSavingPdf, setIsSavingPdf] = useState(false);
     const autoIssueStartedRef = useRef(false);
@@ -1087,6 +1092,9 @@ const ensureIssueRecord = async (): Promise<{ id: string; issue_count: number }>
 
 const createPendingDeliveryRecord = async (
     issueRecordId: string,
+    options?: {
+        forceCreate?: boolean;
+    },
 ): Promise<'issued' | 'pending_send'> => {
     const supabase = getSupabase();
 
@@ -1122,7 +1130,7 @@ const createPendingDeliveryRecord = async (
         sent_at: null,
     };
 
-    if (combined.delivery?.id) {
+    if (combined.delivery?.id && !options?.forceCreate) {
         const { error } = await supabase
             .from('invoice_delivery_records')
             .update(deliveryPayload)
@@ -1170,6 +1178,149 @@ const handleIssueAndSavePdf = async () => {
     } catch (e) {
         console.error('[InvoicePdfPreviewModal] failed to issue and save pdf', e);
         window.alert(e instanceof Error ? e.message : '請求書PDFの発行に失敗しました。');
+    } finally {
+        setIsSavingPdf(false);
+    }
+};
+
+const handleReissueAndSavePdf = async () => {
+    if (!combined.issue?.id) {
+        window.alert('現在の発行履歴が見つからないため、訂正再発行できません。');
+        return;
+    }
+
+    const revisionReason = window.prompt(
+        '訂正理由を入力してください。',
+        '明細・金額訂正',
+    );
+
+    if (revisionReason === null) {
+        return;
+    }
+
+    if (!revisionReason.trim()) {
+        window.alert('訂正理由を入力してください。');
+        return;
+    }
+
+    const confirmed = window.confirm(
+        `請求番号 ${invoice.invoice_id || '—'} を訂正・再発行します。\n\n` +
+            `・現在の第${combined.issue.revision_no || 1}版は履歴として残ります\n` +
+            `・旧請求書の閲覧URLは無効になります\n` +
+            `・新しい請求書PDFを作成し、訂正送信待ちに登録します\n\n` +
+            `よろしいですか？`,
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    setIsSavingPdf(true);
+
+    const supabase = getSupabase();
+    const now = new Date().toISOString();
+    const nextRevisionNo = (combined.issue.revision_no || 1) + 1;
+
+    let draftIssueId: string | null = null;
+
+    try {
+        // 1. 新版を下書きとして作成する
+        //    この時点では is_current=false のため、旧版はまだ有効なままです。
+        const { data: draftIssue, error: draftIssueError } = await supabase
+            .from('invoice_issue_records')
+            .insert({
+                legacy_invoice_id: invoice.row_uuid,
+                invoice_no: invoice.invoice_id,
+                customer_code: customer?.customer_code || project?.customer_code || null,
+                customer_name: customer?.customer_name || null,
+                issue_status: 'draft',
+                issued_at: now,
+                last_issued_at: now,
+                issue_count: 1,
+                revision_no: nextRevisionNo,
+                is_current: false,
+                revision_reason: revisionReason.trim(),
+                note: `訂正再発行：${revisionReason.trim()}`,
+            })
+            .select('id, issue_count')
+            .single();
+
+        if (draftIssueError) {
+            logSupabaseError('invoice_issue_records insert reissue draft', draftIssueError);
+            throw draftIssueError;
+        }
+
+        draftIssueId = draftIssue.id;
+
+        // 2. 新版PDFをStorageへ保存する
+        const result = await savePdfToSupabaseStorage({
+            id: draftIssue.id,
+            issue_count: draftIssue.issue_count || 1,
+        });
+
+        // 3. 新版の送付待ちを作成する
+        //    forceCreate=true により旧版の送付履歴は更新しません。
+        const nextTab = await createPendingDeliveryRecord(draftIssue.id, {
+            forceCreate: true,
+        });
+
+        // 4. PDF保存と送付待ち作成が成功してから、
+        //    旧版を失効し、新版を現在版に切り替える。
+        const { error: activateError } = await supabase.rpc(
+            'activate_invoice_reissue',
+            {
+                p_previous_issue_id: combined.issue.id,
+                p_new_issue_id: draftIssue.id,
+            },
+        );
+
+        if (activateError) {
+            logSupabaseError('activate_invoice_reissue', activateError);
+            throw activateError;
+        }
+
+        if (nextTab === 'pending_send') {
+            window.alert(
+                `訂正請求書を第${nextRevisionNo}版として発行しました。\n\n` +
+                    `旧版の閲覧URLは無効化されました。\n` +
+                    `新版は送付待ちに登録されています。\n\n` +
+                    `保存先:\n${result.storagePath}`,
+            );
+        } else {
+            window.alert(
+                `訂正請求書を第${nextRevisionNo}版として発行しました。\n\n` +
+                    `旧版の閲覧URLは無効化されました。\n` +
+                    `ただし有効な顧客別請求設定がないため、送付待ちには登録されていません。\n\n` +
+                    `保存先:\n${result.storagePath}`,
+            );
+        }
+
+        await onCompleted?.(nextTab);
+    } catch (e) {
+        console.error('[InvoicePdfPreviewModal] failed to reissue invoice', e);
+
+        // PDF保存などの途中で失敗した場合、
+        // 一覧に不要な下書きを残さない。
+        if (draftIssueId) {
+            const { error: cleanupError } = await supabase
+                .from('invoice_issue_records')
+                .delete()
+                .eq('id', draftIssueId)
+                .eq('is_current', false);
+
+            if (cleanupError) {
+                logSupabaseError(
+                    'invoice_issue_records cleanup reissue draft',
+                    cleanupError,
+                );
+            }
+        }
+
+        window.alert(
+            e instanceof Error
+                ? `訂正再発行に失敗しました。\n${e.message}`
+                : '訂正再発行に失敗しました。',
+        );
     } finally {
         setIsSavingPdf(false);
     }
@@ -1787,12 +1938,22 @@ const renderInvoiceCoverPage = () => {
         </button>
     ) : (
         <button
-            onClick={handleSavePdf}
-            disabled={isSavingPdf || !combined.issue?.id}
-            className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400"
-        >
-            {isSavingPdf ? 'PDF保存中...' : 'Storageに再保存'}
-        </button>
+    onClick={isDeliverySent ? handleReissueAndSavePdf : handleSavePdf}
+    disabled={isSavingPdf || !combined.issue?.id}
+    className={
+        isDeliverySent
+            ? "bg-amber-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-amber-700 disabled:bg-slate-400"
+            : "bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400"
+    }
+>
+    {isSavingPdf
+        ? isDeliverySent
+            ? '訂正再発行中...'
+            : 'PDF保存中...'
+        : isDeliverySent
+          ? '訂正・再発行'
+          : 'Storageに再保存'}
+</button>
     )}
 
     {mode !== 'issue-auto' && (
@@ -2689,11 +2850,34 @@ displayDelivery.delivery_status === 'sent' ? (
                 </div>
 
                 <div className="p-6 border-t border-slate-200 dark:border-slate-700 flex flex-wrap justify-end gap-3">
-                    <div className="flex items-center gap-2 mr-auto">
-                        <StatusBadge status={combined.issue?.issue_status} kind="issue" />
-                        <StatusBadge status={combined.delivery?.delivery_status} kind="delivery" method={combined.delivery?.delivery_method} />
-                        <StatusBadge status={combined.payment?.payment_status} kind="payment" />
-                    </div>
+                    <div className="flex items-center gap-2 mr-auto flex-wrap">
+  <StatusBadge status={combined.issue?.issue_status} kind="issue" />
+
+  {combined.issue && (
+    <span
+      className={
+        (combined.issue.revision_no || 1) > 1
+          ? "px-2.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+          : "px-2.5 py-0.5 text-xs font-medium rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+      }
+    >
+      {(combined.issue.revision_no || 1) > 1
+        ? `訂正・第${combined.issue.revision_no}版`
+        : "第1版"}
+    </span>
+  )}
+
+  <StatusBadge
+    status={combined.delivery?.delivery_status}
+    kind="delivery"
+    method={combined.delivery?.delivery_method}
+  />
+
+  <StatusBadge
+    status={combined.payment?.payment_status}
+    kind="payment"
+  />
+</div>
 
                     <button
     onClick={() => setPdfPreviewMode('preview')}
@@ -3361,36 +3545,83 @@ const LegacyInvoiceBillingPage: React.FC = () => {
             setUsers(userMap);
 
             const { data: issueData, error: issueError } = await supabase
-                .from('invoice_issue_records')
-                .select('id, legacy_invoice_id, invoice_no, issue_status, issued_at, issue_count, pdf_storage_path, pdf_url');
+  .from("invoice_issue_records")
+  .select(`
+    id,
+    legacy_invoice_id,
+    invoice_no,
+    issue_status,
+    issued_at,
+    issue_count,
+    pdf_storage_path,
+    pdf_url,
+    excel_storage_path,
+    revision_no,
+    is_current,
+    revision_reason
+  `)
+  .eq("is_current", true);
 
-            if (issueError) {
-                logSupabaseError('invoice_issue_records', issueError);
-                setIssues({});
-            } else {
-                const issueMap: Record<string, IssueRecordRow> = {};
-                ((issueData || []) as IssueRecordRow[]).forEach((r) => {
-                    if (r.legacy_invoice_id) issueMap[r.legacy_invoice_id] = r;
-                    if (r.invoice_no) issueMap[r.invoice_no] = r;
-                });
-                setIssues(issueMap);
-            }
+let currentIssueIds: string[] = [];
 
-            const { data: deliveryData, error: deliveryError } = await supabase
-                .from('invoice_delivery_records')
-                .select('id, legacy_invoice_id, invoice_no, issue_record_id, delivery_method, delivery_status, to_email, cc_email, bcc_email, subject, body, attachment_file_name, sent_at');
+if (issueError) {
+  logSupabaseError("invoice_issue_records", issueError);
+  setIssues({});
+} else {
+  const currentIssues = (issueData || []) as IssueRecordRow[];
 
-            if (deliveryError) {
-                logSupabaseError('invoice_delivery_records', deliveryError);
-                setDeliveries({});
-            } else {
-                const deliveryMap: Record<string, DeliveryRecordRow> = {};
-                ((deliveryData || []) as DeliveryRecordRow[]).forEach((r) => {
-                    if (r.legacy_invoice_id) deliveryMap[r.legacy_invoice_id] = r;
-                    if (r.invoice_no) deliveryMap[r.invoice_no] = r;
-                });
-                setDeliveries(deliveryMap);
-            }
+  const issueMap: Record<string, IssueRecordRow> = {};
+
+  currentIssues.forEach((r) => {
+    if (r.legacy_invoice_id) issueMap[r.legacy_invoice_id] = r;
+    if (r.invoice_no) issueMap[r.invoice_no] = r;
+  });
+
+  setIssues(issueMap);
+
+  currentIssueIds = currentIssues
+    .map((issue) => issue.id)
+    .filter((id): id is string => Boolean(id));
+}
+
+let deliveryData: DeliveryRecordRow[] = [];
+
+if (currentIssueIds.length > 0) {
+  const { data, error: deliveryError } = await supabase
+    .from("invoice_delivery_records")
+    .select(`
+      id,
+      legacy_invoice_id,
+      invoice_no,
+      issue_record_id,
+      delivery_method,
+      delivery_status,
+      to_email,
+      cc_email,
+      bcc_email,
+      subject,
+      body,
+      attachment_file_name,
+      sent_at
+    `)
+    .in("issue_record_id", currentIssueIds);
+
+  if (deliveryError) {
+    logSupabaseError("invoice_delivery_records", deliveryError);
+    setDeliveries({});
+  } else {
+    deliveryData = (data || []) as DeliveryRecordRow[];
+  }
+}
+
+const deliveryMap: Record<string, DeliveryRecordRow> = {};
+
+deliveryData.forEach((r) => {
+  if (r.legacy_invoice_id) deliveryMap[r.legacy_invoice_id] = r;
+  if (r.invoice_no) deliveryMap[r.invoice_no] = r;
+});
+
+setDeliveries(deliveryMap);
 
             const { data: paymentData, error: paymentError } = await supabase
                 .from('invoice_payment_matches')
@@ -4277,7 +4508,25 @@ const refreshDeliveryFromBillingSetting = useCallback(
                                         <td className="px-4 py-3 text-right">{JPY(row.invoice.subtotal)}</td>
                                         <td className="px-4 py-3 text-right">{JPY(row.invoice.consumption)}</td>
                                         <td className="px-4 py-3 text-right font-semibold text-slate-900 dark:text-white">{JPY(row.invoice.total)}</td>
-                                        <td className="px-4 py-3 text-center"><StatusBadge status={row.issue?.issue_status} kind="issue" /></td>
+                                        <td className="px-4 py-3 text-center">
+  <div className="flex flex-col items-center gap-1">
+    <StatusBadge status={row.issue?.issue_status} kind="issue" />
+
+    {row.issue && (
+      <span
+        className={
+          (row.issue.revision_no || 1) > 1
+            ? "px-2 py-0.5 text-[11px] font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+            : "px-2 py-0.5 text-[11px] font-medium rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+        }
+      >
+        {(row.issue.revision_no || 1) > 1
+          ? `訂正・第${row.issue.revision_no}版`
+          : "第1版"}
+      </span>
+    )}
+  </div>
+</td>
                                         <td className="px-4 py-3 text-center"><StatusBadge status={row.delivery?.delivery_status} kind="delivery" method={row.delivery?.delivery_method} /></td>
                                         <td className="px-4 py-3 text-center"><StatusBadge status={row.payment?.payment_status} kind="payment" /></td>
                                     </tr>
