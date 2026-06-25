@@ -2066,6 +2066,46 @@ const InvoiceDetailModal: React.FC<{
     const isPaid = payment?.payment_status === 'paid';
 
     useEffect(() => {
+    let cancelled = false;
+
+    const refreshPendingDelivery = async () => {
+        if (
+            !displayDelivery ||
+            displayDelivery.delivery_status !== 'pending' ||
+            displayDelivery.delivery_method !== 'email'
+        ) {
+            return;
+        }
+
+        try {
+            const latestDelivery =
+                await onRefreshDeliveryFromBillingSetting(combined);
+
+            if (!cancelled && latestDelivery) {
+                setRefreshedDelivery(latestDelivery);
+            }
+        } catch (e) {
+            console.error(
+                '[InvoiceDetailModal] failed to refresh pending delivery settings',
+                e,
+            );
+        }
+    };
+
+    refreshPendingDelivery();
+
+    return () => {
+        cancelled = true;
+    };
+}, [
+    combined,
+    displayDelivery?.id,
+    displayDelivery?.delivery_method,
+    displayDelivery?.delivery_status,
+    onRefreshDeliveryFromBillingSetting,
+]);
+
+    useEffect(() => {
         let cancelled = false;
 
         const load = async () => {
