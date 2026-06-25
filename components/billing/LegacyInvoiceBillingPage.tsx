@@ -68,6 +68,7 @@ interface InvoiceLegacyRow {
     project_uuid: string | null;
     customer_uuid: string | null;
     delivery_date: string | null;
+    delivery_date_value: string | null;
     specification: string | null;
     subtotal: string | null;
     consumption: string | null;
@@ -250,6 +251,13 @@ const todayDateString = (): string => {
     return `${yyyy}-${mm}-${dd}`;
 };
 
+const firstDayOfCurrentMonthString = (): string => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+
+    return `${yyyy}-${mm}-01`;
+};
 
 const formatJapaneseDateForInvoice = (v: string | null | undefined): string => {
     const d = v ? new Date(v) : new Date();
@@ -3388,6 +3396,20 @@ const LegacyInvoiceBillingPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [invoices, setInvoices] = useState<InvoiceLegacyRow[]>([]);
+    const [deliveryDateFrom, setDeliveryDateFrom] = useState(
+    firstDayOfCurrentMonthString(),
+);
+const [deliveryDateTo, setDeliveryDateTo] = useState(
+    todayDateString(),
+);
+
+// 実際にDB検索へ使用している期間
+const [appliedDeliveryDateFrom, setAppliedDeliveryDateFrom] = useState(
+    firstDayOfCurrentMonthString(),
+);
+const [appliedDeliveryDateTo, setAppliedDeliveryDateTo] = useState(
+    todayDateString(),
+);
     const [projects, setProjects] = useState<Record<string, ProjectLegacyRow>>({});
     const [customers, setCustomers] = useState<Record<string, CustomerRow>>({});
     const [users, setUsers] = useState<Record<string, UserRow>>({});
@@ -3414,19 +3436,57 @@ const LegacyInvoiceBillingPage: React.FC = () => {
 
         try {
             const supabase = getSupabase();
-            const { data: invoicesData, error: invoicesError } = await supabase
-                .from('invoices_legacy')
-                .select('row_uuid, invoice_id, order_id, project_id, project_uuid, customer_uuid, delivery_date, specification, subtotal, consumption, total, note, pattern_name, status, create_date')
-                .order('create_date', { ascending: false })
-                .limit(500);
+            const PAGE_SIZE = 1000;
+let from = 0;
+let hasMore = true;
+const allInvoiceRows: InvoiceLegacyRow[] = [];
 
-            if (invoicesError) {
-                logSupabaseError('invoices_legacy', invoicesError);
-                throw invoicesError;
-            }
+while (hasMore) {
+    let query = supabase
+        .from('invoices_legacy')
+        .select(`
+            row_uuid,
+            invoice_id,
+            order_id,
+            project_id,
+            project_uuid,
+            customer_uuid,
+            delivery_date,
+            delivery_date_value,
+            specification,
+            subtotal,
+            consumption,
+            total,
+            note,
+            pattern_name,
+            status,
+            create_date
+        `)
+        .gte('delivery_date_value', appliedDeliveryDateFrom)
+        .lte('delivery_date_value', appliedDeliveryDateTo)
+        .order('delivery_date_value', {
+            ascending: false,
+            nullsFirst: false,
+        })
+        .range(from, from + PAGE_SIZE - 1);
 
-            const invoiceRows = (invoicesData || []) as InvoiceLegacyRow[];
-            setInvoices(invoiceRows);
+    const { data, error: invoicesError } = await query;
+
+    if (invoicesError) {
+        logSupabaseError('invoices_legacy', invoicesError);
+        throw invoicesError;
+    }
+
+    const rows = (data || []) as InvoiceLegacyRow[];
+
+    allInvoiceRows.push(...rows);
+
+    hasMore = rows.length === PAGE_SIZE;
+    from += PAGE_SIZE;
+}
+
+const invoiceRows = allInvoiceRows;
+setInvoices(invoiceRows);
 
             const projectUuids = Array.from(new Set(invoiceRows.map((invoice) => invoice.project_uuid).filter((id): id is string => !!id)));
             const projectIds = Array.from(new Set(invoiceRows.map((invoice) => invoice.project_id).filter((id): id is string => !!id)));
@@ -3655,7 +3715,7 @@ setDeliveries(deliveryMap);
 } finally {
     setIsLoading(false);
 }
-    }, []);
+    }, [appliedDeliveryDateFrom, appliedDeliveryDateTo]);
 
     const loadSettings = useCallback(async () => {
         setIsLoading(true);
@@ -4335,6 +4395,21 @@ const refreshDeliveryFromBillingSetting = useCallback(
         [loadInvoiceData],
     );
 
+    const handleDeliveryDateSearch = () => {
+    if (!deliveryDateFrom || !deliveryDateTo) {
+        window.alert('納品日の開始日と終了日を入力してください。');
+        return;
+    }
+
+    if (deliveryDateFrom > deliveryDateTo) {
+        window.alert('納品日のFromはTo以前の日付にしてください。');
+        return;
+    }
+
+    setAppliedDeliveryDateFrom(deliveryDateFrom);
+    setAppliedDeliveryDateTo(deliveryDateTo);
+};
+
     const handleRefresh = () => {
         if (activeTab === 'settings') {
             loadSettings();
@@ -4356,10 +4431,50 @@ const refreshDeliveryFromBillingSetting = useCallback(
                             <p className="text-sm text-slate-500">基幹SQL Serverから同期された請求データを元にした BtoB 請求管理</p>
                         </div>
                     </div>
-                    <button onClick={handleRefresh} className="flex items-center gap-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium py-2 px-3 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600">
-                        <RefreshCw className="w-4 h-4" />
-                        再読込
-                    </button>
+                    <div className="flex flex-wrap items-end justify-end gap-2">
+    <div className="flex flex-col gap-1">
+        <label className="text-xs font-medium text-slate-500">
+            納品日 From
+        </label>
+        <input
+            type="date"
+            value={deliveryDateFrom}
+            onChange={(e) => setDeliveryDateFrom(e.target.value)}
+            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+        />
+    </div>
+
+    <div className="flex flex-col gap-1">
+        <label className="text-xs font-medium text-slate-500">
+            納品日 To
+        </label>
+        <input
+            type="date"
+            value={deliveryDateTo}
+            onChange={(e) => setDeliveryDateTo(e.target.value)}
+            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+        />
+    </div>
+
+    <button
+        type="button"
+        onClick={handleDeliveryDateSearch}
+        disabled={isLoading}
+        className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 disabled:bg-slate-400"
+    >
+        検索
+    </button>
+
+    <button
+        type="button"
+        onClick={handleRefresh}
+        disabled={isLoading}
+        className="flex h-9 items-center gap-2 rounded-lg bg-slate-100 px-3 text-sm font-medium text-slate-700 hover:bg-slate-200 disabled:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+    >
+        <RefreshCw className="w-4 h-4" />
+        再読込
+    </button>
+</div>
                 </div>
             </div>
 
@@ -4401,10 +4516,23 @@ const refreshDeliveryFromBillingSetting = useCallback(
                 </div>
 
                 {activeTab !== 'settings' && (
-                    <div className="text-sm text-slate-500">
-                        表示件数: <span className="font-semibold text-slate-700 dark:text-slate-200">{filteredInvoices.length}</span> / 取得件数:{' '}
-                        <span className="font-semibold text-slate-700 dark:text-slate-200">{invoices.length}</span>
-                    </div>
+                    <div className="text-sm text-slate-500 dark:text-slate-400">
+    <span>納品日：</span>
+    <span className="font-semibold text-slate-700 dark:text-slate-200">
+        {appliedDeliveryDateFrom}
+    </span>
+    <span className="mx-1">〜</span>
+    <span className="font-semibold text-slate-700 dark:text-slate-200">
+        {appliedDeliveryDateTo}
+    </span>
+
+    <span className="ml-3">
+        表示件数：
+        <span className="font-semibold text-slate-700 dark:text-slate-200">
+            {filteredInvoices.length}
+        </span>
+    </span>
+</div>
                 )}
 
                 {activeTab === 'settings' && (
