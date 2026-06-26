@@ -155,6 +155,175 @@ const EmailNotificationSettings: React.FC<{
   </div>
 </div>
 
+{/* 通知タイプ */}
+<div className="space-y-4">
+  <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-4">
+    通知タイプ
+  </h3>
+
+  <div className="space-y-3">
+    <div className="flex items-center gap-3">
+      <input
+        type="checkbox"
+        id="notify-on-submit"
+        checked={settings.notificationTypes.onSubmit}
+        onChange={(e) =>
+          setSettings((prev) => ({
+            ...prev,
+            notificationTypes: {
+              ...prev.notificationTypes,
+              onSubmit: e.target.checked,
+            },
+          }))
+        }
+        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+        disabled={!settings.enabled}
+      />
+      <label
+        htmlFor="notify-on-submit"
+        className="text-sm font-medium text-slate-700 dark:text-slate-300"
+      >
+        申請提出時の通知
+      </label>
+    </div>
+
+    <div className="flex items-center gap-3">
+      <input
+        type="checkbox"
+        id="notify-on-approve"
+        checked={settings.notificationTypes.onApprove}
+        onChange={(e) =>
+          setSettings((prev) => ({
+            ...prev,
+            notificationTypes: {
+              ...prev.notificationTypes,
+              onApprove: e.target.checked,
+            },
+          }))
+        }
+        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+        disabled={!settings.enabled}
+      />
+      <label
+        htmlFor="notify-on-approve"
+        className="text-sm font-medium text-slate-700 dark:text-slate-300"
+      >
+        承認完了時の通知
+      </label>
+    </div>
+
+    <div className="flex items-center gap-3">
+      <input
+        type="checkbox"
+        id="notify-on-reject"
+        checked={settings.notificationTypes.onReject}
+        onChange={(e) =>
+          setSettings((prev) => ({
+            ...prev,
+            notificationTypes: {
+              ...prev.notificationTypes,
+              onReject: e.target.checked,
+            },
+          }))
+        }
+        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+        disabled={!settings.enabled}
+      />
+      <label
+        htmlFor="notify-on-reject"
+        className="text-sm font-medium text-slate-700 dark:text-slate-300"
+      >
+        却下・差戻し時の通知
+      </label>
+    </div>
+
+    <div className="flex items-center gap-3">
+      <input
+        type="checkbox"
+        id="notify-on-next-step"
+        checked={settings.notificationTypes.onNextStep}
+        onChange={(e) =>
+          setSettings((prev) => ({
+            ...prev,
+            notificationTypes: {
+              ...prev.notificationTypes,
+              onNextStep: e.target.checked,
+            },
+          }))
+        }
+        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+        disabled={!settings.enabled}
+      />
+      <label
+        htmlFor="notify-on-next-step"
+        className="text-sm font-medium text-slate-700 dark:text-slate-300"
+      >
+        次の承認ステップへの通知
+      </label>
+    </div>
+  </div>
+</div>
+
+{/* テスト送信 */}
+<div className="space-y-4">
+  <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-4">
+    テスト送信
+  </h3>
+
+  <div className="space-y-3">
+    <div>
+      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+        テスト送信先メールアドレス
+      </label>
+
+      <input
+        type="email"
+        value={settings.testEmail}
+        onChange={(e) =>
+          setSettings((prev) => ({
+            ...prev,
+            testEmail: e.target.value,
+          }))
+        }
+        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+        placeholder="test@example.com"
+        disabled={!settings.enabled}
+      />
+    </div>
+
+    <button
+      type="button"
+      onClick={handleTestEmail}
+      disabled={isTesting || !settings.enabled}
+      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
+    >
+      {isTesting ? (
+        <>
+          <div className="w-4 h-4 border-2 border-white/30 border-t-transparent animate-spin rounded-full" />
+          <span>テスト送信中...</span>
+        </>
+      ) : (
+        <>
+          <Send className="w-4 h-4" />
+          <span>テストメール送信</span>
+        </>
+      )}
+    </button>
+
+    {testResult && (
+      <div
+        className={`mt-2 p-3 rounded-lg text-sm ${
+          testResult.includes('失敗') || testResult.includes('エラー')
+            ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+            : 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+        }`}
+      >
+        {testResult}
+      </div>
+    )}
+  </div>
+</div>
+
         <div className="flex justify-end gap-3 p-6 border-t border-slate-200 dark:border-slate-700">
           <button
             onClick={onClose}
