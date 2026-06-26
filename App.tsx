@@ -1644,8 +1644,6 @@ const App: React.FC = () => {
                 return <OrderForm onBack={() => handleNavigate('business_forms_hub')} />;
             case 'business_production':
                 return <ProductionOrderForm onBack={() => handleNavigate('business_forms_hub')} />;
-            case 'business_delivery':
-                return <DeliverySlipForm onBack={() => handleNavigate('business_forms_hub')} />;
             case 'detailed_estimate':
                 return (
                     <DetailedEstimateForm
