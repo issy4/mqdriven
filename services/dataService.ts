@@ -2150,22 +2150,6 @@ export async function getUsers(): Promise<EmployeeUser[]> {
 }
 
 export const addUser = async (userData: { name: string, email: string | null, role: 'admin' | 'user', isActive?: boolean, nameKana?: string | null, notificationEnabled?: boolean }): Promise<void> => {
-    // カタカナバリデーション
-    if (userData.nameKana) {
-        const validation = validateKatakana(userData.nameKana, {
-            allowHalfWidth: false,
-            autoNormalize: true
-        });
-
-        if (!validation.isValid) {
-            throw new Error(validation.errorMessage || '名前カナの形式が正しくありません');
-        }
-
-        // 自動正規化された場合は正規化された値を使用
-        if (validation.normalizedText) {
-            userData.nameKana = validation.normalizedText;
-        }
-    }
 
     const supabase = getSupabase();
     const basePayload: Record<string, any> = {
@@ -2196,22 +2180,6 @@ export const addUser = async (userData: { name: string, email: string | null, ro
 };
 
 export const updateUser = async (id: string, updates: Partial<EmployeeUser>): Promise<void> => {
-    // カタカナバリデーション
-    if (updates.nameKana) {
-        const validation = validateKatakana(updates.nameKana, {
-            allowHalfWidth: false,
-            autoNormalize: true
-        });
-
-        if (!validation.isValid) {
-            throw new Error(validation.errorMessage || '名前カナの形式が正しくありません');
-        }
-
-        // 自動正規化された場合は正規化された値を使用
-        if (validation.normalizedText) {
-            updates.nameKana = validation.normalizedText;
-        }
-    }
 
     const supabase = getSupabase();
     const basePayload: Record<string, any> = {
