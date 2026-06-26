@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import ApplicationList from '../ApplicationList';
 import ApplicationDetailModal from '../ApplicationDetailModal';
 import { getApplications, getApplicationCodes, approveApplication, rejectApplication, cancelApplication, deleteApplicationDraft, generateJournalLinesFromApplication } from '../../services/dataService';
-import SMTPEmailService from '../../services/smtpEmailService';
 // FIX: Import AllocationDivision type.
 import { ApplicationWithDetails, ApplicationCode, EmployeeUser, Toast, Customer, AccountItem, Job, PurchaseOrder, Department, AllocationDivision, PaymentRecipient, DailyReportPrefill, AccountingStatus } from '../../types';
 import { Loader, AlertTriangle, Mail } from '../Icons';
@@ -118,12 +117,6 @@ const ApprovalWorkflowPage: React.FC<ApprovalWorkflowPageProps> = ({
     const [activeTab, setActiveTab] = useState<TabId>('approvals');
     const [activeResumedApplication, setActiveResumedApplication] = useState<ApplicationWithDetails | null>(null);
     const [isEmailSettingsOpen, setIsEmailSettingsOpen] = useState(false);
-    const [emailService, setEmailService] = useState<SMTPEmailService | null>(null);
-
-    // Initialize email service
-    useEffect(() => {
-        setEmailService(new SMTPEmailService());
-    }, []);
 
     // State for form view
     const [applicationCodes, setApplicationCodes] = useState<ApplicationCode[]>([]);
@@ -202,52 +195,37 @@ const ApprovalWorkflowPage: React.FC<ApprovalWorkflowPageProps> = ({
     };
 
     const handleApprove = async (application: ApplicationWithDetails) => {
-        if (!currentUser || !emailService) return;
-        try {
-            await approveApplication(application, currentUser as any);
-            addToast('申請を承認しました。', 'success');
-            
-            // Send approval notification via SMTP
-            const emailResult = await emailService.sendApprovalNotification(
-                application.applicant?.email || '',
-                '申請承認完了',
-                `申請が承認されました。\n\n申請ID: ${application.id}`
-            );
-            
-            if (!emailResult.success) {
-                addToast(`メール通知送信に失敗しました: ${emailResult.error}`, 'error');
-            }
-            
-            handleModalClose();
-            await fetchListData();
-        } catch (err: any) {
-            addToast(`エラー: ${err.message}`, 'error');
-        }
-    };
+  if (!currentUser) return;
 
-    const handleReject = async (application: ApplicationWithDetails, reason: string) => {
-        if (!currentUser || !emailService) return;
-        try {
-            await rejectApplication(application, reason, currentUser as any);
-            addToast('申請を差し戻しました。', 'success');
-            
-            // Send rejection notification via SMTP
-            const emailResult = await emailService.sendRejectionNotification(
-                application.applicant?.email || '',
-                '申請差し戻し',
-                reason
-            );
-            
-            if (!emailResult.success) {
-                addToast(`メール通知送信に失敗しました: ${emailResult.error}`, 'error');
-            }
-            
-            handleModalClose();
-            await fetchListData();
-        } catch (err: any) {
-            addToast(`エラー: ${err.message}`, 'error');
-        }
-    };
+  try {
+    await approveApplication(application, currentUser as any);
+
+    addToast('申請を承認しました。', 'success');
+
+    handleModalClose();
+    await fetchListData();
+  } catch (err: any) {
+    addToast(`エラー: ${err.message}`, 'error');
+  }
+};
+
+    const handleReject = async (
+  application: ApplicationWithDetails,
+  reason: string,
+) => {
+  if (!currentUser) return;
+
+  try {
+    await rejectApplication(application, reason, currentUser as any);
+
+    addToast('申請を差し戻しました。', 'success');
+
+    handleModalClose();
+    await fetchListData();
+  } catch (err: any) {
+    addToast(`エラー: ${err.message}`, 'error');
+  }
+};
     
     const handleCancelApplication = async (
         application: ApplicationWithDetails,
