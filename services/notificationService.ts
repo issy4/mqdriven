@@ -1,6 +1,5 @@
 import { Application, ApplicationWithDetails, ApprovalRoute } from '../types';
 import { getSupabase } from './supabaseClient';
-import { sendEmail } from './emailService';
 import { formatDateTime } from '../utils';
 
 export type ApprovalNotificationType = 'submitted' | 'approved' | 'rejected' | 'step_forward';
@@ -16,9 +15,10 @@ export interface ApprovalNotificationPayload {
 type SupabaseClient = ReturnType<typeof getSupabase>;
 
 interface UserSummary {
-    id: string;
-    name: string | null;
-    email: string | null;
+  id: string;
+  name: string | null;
+  email: string | null;
+  notification_enabled: boolean | null;
 }
 
 const userCache = new Map<string, UserSummary>();
@@ -85,7 +85,7 @@ const resolveUserById = async (supabase: SupabaseClient, userId?: string | null)
     }
     const { data, error } = await supabase
         .from('users')
-        .select('id, name, email')
+        .select('id, name, email, notification_enabled')
         .eq('id', userId)
         .limit(1)
         .single();
@@ -130,18 +130,27 @@ const resolveApplicationCodeName = async (
     return name;
 };
 
-const resolveRecipients = async (supabase: SupabaseClient, payload: ApprovalNotificationPayload): Promise<string[]> => {
-    const recipients = new Set<string>();
-    if (payload.recipientEmail && payload.recipientEmail.includes('@')) {
-        recipients.add(payload.recipientEmail);
+const resolveRecipients = async (
+  supabase: SupabaseClient,
+  payload: ApprovalNotificationPayload,
+): Promise<string[]> => {
+  const recipients = new Set<string>();
+
+  if (payload.recipientUserId) {
+    const summary = await resolveUserById(supabase, payload.recipientUserId);
+
+    if (summary?.notification_enabled !== false && summary?.email?.includes('@')) {
+      recipients.add(summary.email.trim());
     }
-    if (payload.recipientUserId) {
-        const summary = await resolveUserById(supabase, payload.recipientUserId);
-        if (summary?.email) {
-            recipients.add(summary.email);
-        }
-    }
+
     return Array.from(recipients);
+  }
+
+  if (payload.recipientEmail?.includes('@')) {
+    recipients.add(payload.recipientEmail.trim());
+  }
+
+  return Array.from(recipients);
 };
 
 const buildApplicantLabel = (application: Application | ApplicationWithDetails, applicant?: UserSummary | null) => {
@@ -262,7 +271,7 @@ const loadNotificationSettings = (): { enableNotifications: boolean; notificatio
         return { enableNotifications: true, notificationTypes: { submitted: true, approved: true, rejected: true, step_forward: true } };
     }
     try {
-        const raw = window.localStorage.getItem('emailNotificationSettings');
+        const raw = window.localStorage.getItem('adminEmailNotificationSettings');
         const settings = raw ? JSON.parse(raw) : null;
         return {
             enableNotifications: settings?.enableNotifications ?? true,
@@ -298,11 +307,27 @@ export async function sendApprovalNotification(payload: ApprovalNotificationPayl
         }
 
         const { subject, body } = await buildEmailContent(supabase, payload);
-        await sendEmail({
-            to: recipients,
-            subject,
-            body,
-        });
+
+const { data, error } = await supabase.functions.invoke(
+  'send-approval-notification',
+  {
+    body: {
+      to: recipients,
+      subject,
+      body,
+    },
+  },
+);
+
+if (error) {
+  throw error;
+}
+
+if (!data?.ok) {
+  throw new Error(
+    data?.error || '承認通知メールの送信に失敗しました。',
+  );
+}
     } catch (error) {
         console.error('[notification] 承認通知メールの送信に失敗しました', error);
     }
@@ -355,11 +380,26 @@ export const sendApprovalRouteCreatedNotification = async (route: ApprovalRoute)
     ].join('\n');
 
     try {
-        await sendEmail({
-            to: filteredRecipients,
-            subject: `【承認ルート追加】${route.name}`,
-            body,
-        });
+        const { data, error } = await supabase.functions.invoke(
+  'send-approval-notification',
+  {
+    body: {
+      to: filteredRecipients,
+      subject: `【承認ルート追加】${route.name}`,
+      body,
+    },
+  },
+);
+
+if (error) {
+  throw error;
+}
+
+if (!data?.ok) {
+  throw new Error(
+    data?.error || '承認ルート通知メールの送信に失敗しました。',
+  );
+}
     } catch (error) {
         console.error('[notification] 承認ルート追加通知の送信に失敗しました', error);
     }
