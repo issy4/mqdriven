@@ -1,19 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { getEnvValue } from '../../utils';
-import { sendEmail } from '../../services/emailService';
-
-interface SMTPConfig {
-  host: string;
-  port: number;
-  secure: boolean;
-  username: string;
-  password: string;
-  fromEmail: string;
-  fromName: string;
-}
+import { getSupabase } from '../../services/supabaseClient';
 
 interface EmailNotificationSettings {
-  smtp: SMTPConfig;
   enableNotifications: boolean;
   notificationTypes: {
     submitted: boolean;
@@ -25,23 +13,14 @@ interface EmailNotificationSettings {
 
 const EmailNotificationSettings: React.FC = () => {
   const [settings, setSettings] = useState<EmailNotificationSettings>({
-    smtp: {
-      host: '',
-      port: 587,
-      secure: false,
-      username: '',
-      password: '',
-      fromEmail: '',
-      fromName: '文唱堂印刷株式会社'
-    },
-    enableNotifications: true,
-    notificationTypes: {
-      submitted: true,
-      approved: true,
-      rejected: true,
-      step_forward: true
-    }
-  });
+  enableNotifications: true,
+  notificationTypes: {
+    submitted: true,
+    approved: true,
+    rejected: true,
+    step_forward: true,
+  },
+});
 
   const [isLoading, setIsLoading] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -54,80 +33,53 @@ const EmailNotificationSettings: React.FC = () => {
   }, []);
 
   const loadSettings = () => {
-    try {
-      const saved = localStorage.getItem('emailNotificationSettings');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setSettings(prev => ({
-          ...prev,
-          ...parsed,
-          smtp: { ...prev.smtp, ...(parsed.smtp || {}) },
-        }));
-        return;
-      }
+  try {
+    const saved = localStorage.getItem('adminEmailNotificationSettings');
 
-      // Back-compat: SettingsPage stores SMTP settings separately.
-      const smtpSettingsRaw = localStorage.getItem('smtpSettings');
-      if (smtpSettingsRaw) {
-        const parsedSmtp = JSON.parse(smtpSettingsRaw);
-        setSettings(prev => ({
-          ...prev,
-          smtp: { ...prev.smtp, ...(parsedSmtp || {}) },
-        }));
-        return;
-      }
-      
-      // Load from environment variables as defaults
-      const envSmtp: Partial<SMTPConfig> = {};
-      const envHost = getEnvValue('SMTP_HOST');
-      if (envHost) envSmtp.host = envHost;
-      const envPort = getEnvValue('SMTP_PORT');
-      if (envPort) envSmtp.port = Number(envPort) || 587;
-      const envSecure = getEnvValue('SMTP_SECURE');
-      if (envSecure !== undefined && envSecure !== null) envSmtp.secure = envSecure === 'true';
-      const envUser = getEnvValue('SMTP_USERNAME');
-      if (envUser) envSmtp.username = envUser;
-      const envPass = getEnvValue('SMTP_PASSWORD');
-      if (envPass) envSmtp.password = envPass;
-      const envFromEmail = getEnvValue('SMTP_FROM_EMAIL');
-      if (envFromEmail) envSmtp.fromEmail = envFromEmail;
-      const envFromName = getEnvValue('SMTP_FROM_NAME');
-      if (envFromName) envSmtp.fromName = envFromName;
-
-      setSettings(prev => ({
-        ...prev,
-        smtp: { ...prev.smtp, ...envSmtp }
-      }));
-    } catch (error) {
-      console.error('Failed to load email settings:', error);
-      setMessage('設定の読み込みに失敗しました。');
-      setMessageType('error');
+    if (!saved) {
+      return;
     }
-  };
+
+    const parsed = JSON.parse(saved);
+
+    setSettings((prev) => ({
+      ...prev,
+      enableNotifications:
+        typeof parsed.enableNotifications === 'boolean'
+          ? parsed.enableNotifications
+          : prev.enableNotifications,
+      notificationTypes: {
+        ...prev.notificationTypes,
+        ...(parsed.notificationTypes || {}),
+      },
+    }));
+  } catch (error) {
+    console.error('Failed to load email settings:', error);
+    setMessage('設定の読み込みに失敗しました。');
+    setMessageType('error');
+  }
+};
 
   const saveSettings = () => {
-    try {
-      localStorage.setItem('emailNotificationSettings', JSON.stringify(settings));
-      // Keep SettingsPage-compatible key in sync (SMTP only).
-      localStorage.setItem('smtpSettings', JSON.stringify(settings.smtp));
-      setMessage('設定を保存しました。');
-      setMessageType('success');
-    } catch (error) {
-      console.error('Failed to save settings:', error);
-      setMessage('設定の保存に失敗しました。');
-      setMessageType('error');
-    }
-  };
+  try {
+    const safeSettings: EmailNotificationSettings = {
+      enableNotifications: settings.enableNotifications,
+      notificationTypes: settings.notificationTypes,
+    };
 
-  const handleSMTPChange = (field: keyof SMTPConfig, value: string | number | boolean) => {
-    setSettings(prev => ({
-      ...prev,
-      smtp: {
-        ...prev.smtp,
-        [field]: value
-      }
-    }));
-  };
+    localStorage.setItem(
+      'adminEmailNotificationSettings',
+      JSON.stringify(safeSettings),
+    );
+
+    setMessage('設定を保存しました。');
+    setMessageType('success');
+  } catch (error) {
+    console.error('Failed to save email settings:', error);
+    setMessage('設定の保存に失敗しました。');
+    setMessageType('error');
+  }
+};
 
   const handleNotificationTypeChange = (type: keyof EmailNotificationSettings['notificationTypes'], enabled: boolean) => {
     setSettings(prev => ({
@@ -140,59 +92,63 @@ const EmailNotificationSettings: React.FC = () => {
   };
 
   const testEmailConfiguration = async () => {
-    if (!testEmail || !testEmail.includes('@')) {
-      setMessage('テスト用メールアドレスを入力してください。');
-      setMessageType('error');
-      return;
+  if (!testEmail || !testEmail.includes('@')) {
+    setMessage('テスト用メールアドレスを入力してください。');
+    setMessageType('error');
+    return;
+  }
+
+  setIsTesting(true);
+  setMessage('');
+
+  try {
+    const supabase = getSupabase();
+
+    const { data, error } = await supabase.functions.invoke(
+      'send-test-notification-email',
+      {
+        body: {
+          to: testEmail.trim(),
+        },
+      },
+    );
+
+    if (error) {
+      throw error;
     }
 
-    if (!settings.smtp.host || !settings.smtp.username || !settings.smtp.password || !settings.smtp.fromEmail) {
-      setMessage('SMTP設定をすべて入力してください。');
-      setMessageType('error');
-      return;
+    if (!data?.ok) {
+      throw new Error(
+        data?.error || 'テストメール送信に失敗しました。',
+      );
     }
 
-    setIsTesting(true);
-    setMessage('');
+    setMessage(
+      data.message || 'テストメールを送信しました。受信をご確認ください。',
+    );
+    setMessageType('success');
+  } catch (error: any) {
+    console.error('Test email failed:', error);
+    setMessage(
+      `テストメールの送信に失敗しました。${error?.message || ''}`,
+    );
+    setMessageType('error');
+  } finally {
+    setIsTesting(false);
+  }
+};
 
-    try {
-      await sendEmail({
-        to: [testEmail],
-        subject: '【テスト】メール通知設定確認',
-        body: `これはメール通知設定のテストメールです。
-
-設定内容:
-- SMTPホスト: ${settings.smtp.host}:${settings.smtp.port}
-- 送信元: ${settings.smtp.fromName} <${settings.smtp.fromEmail}>
-- 通知設定: ${settings.enableNotifications ? '有効' : '無効'}
-
-このメールが正常に受信できていれば、SMTP設定は正しく構成されています。
-
-送信日時: ${new Date().toLocaleString('ja-JP')}`,
-      });
-
-      setMessage('テストメールを送信しました。受信を確認してください。');
-      setMessageType('success');
-    } catch (error) {
-      console.error('Test email failed:', error);
-      setMessage('テストメールの送信に失敗しました。SMTP設定を確認してください。');
-      setMessageType('error');
-    } finally {
-      setIsTesting(false);
-    }
-  };
-
-  const labelClass = "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1";
   const inputClass = "w-full bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500";
   const checkboxClass = "h-4 w-4 text-blue-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-500";
 
   return (
     <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm space-y-6">
       <div className="border-b border-slate-200 dark:border-slate-700 pb-4">
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">通知メール設定 (SMTP)</h2>
-        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-          申請の承認・却下などの通知をメールで送信するためのSMTP設定を構成します。
-        </p>
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">通知メール設定</h2>
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-200">
+  通知メールは、システムで設定された通知専用メールアドレスから送信されます。
+  SMTPサーバーやパスワードの入力は不要です。
+</div>
       </div>
 
       {message && (
@@ -223,97 +179,7 @@ const EmailNotificationSettings: React.FC = () => {
         </div>
       </div>
 
-      {/* SMTP設定 */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-medium text-slate-900 dark:text-white">SMTPサーバー設定</h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="smtpHost" className={labelClass}>SMTPホスト *</label>
-            <input
-              type="text"
-              id="smtpHost"
-              value={settings.smtp.host}
-              onChange={(e) => handleSMTPChange('host', e.target.value)}
-              className={inputClass}
-              placeholder="smtp.gmail.com"
-            />
-          </div>
 
-          <div>
-            <label htmlFor="smtpPort" className={labelClass}>ポート番号 *</label>
-            <input
-              type="number"
-              id="smtpPort"
-              value={settings.smtp.port}
-              onChange={(e) => handleSMTPChange('port', parseInt(e.target.value) || 587)}
-              className={inputClass}
-              placeholder="587"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="smtpUsername" className={labelClass}>ユーザー名 *</label>
-            <input
-              type="text"
-              id="smtpUsername"
-              value={settings.smtp.username}
-              onChange={(e) => handleSMTPChange('username', e.target.value)}
-              className={inputClass}
-              placeholder="your-email@example.com"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="smtpPassword" className={labelClass}>パスワード *</label>
-            <input
-              type="password"
-              id="smtpPassword"
-              value={settings.smtp.password}
-              onChange={(e) => handleSMTPChange('password', e.target.value)}
-              className={inputClass}
-              placeholder="アプリパスワード"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="fromEmail" className={labelClass}>送信元メールアドレス *</label>
-            <input
-              type="email"
-              id="fromEmail"
-              value={settings.smtp.fromEmail}
-              onChange={(e) => handleSMTPChange('fromEmail', e.target.value)}
-              className={inputClass}
-              placeholder="noreply@example.com"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="fromName" className={labelClass}>送信者名</label>
-            <input
-              type="text"
-              id="fromName"
-              value={settings.smtp.fromName}
-              onChange={(e) => handleSMTPChange('fromName', e.target.value)}
-              className={inputClass}
-              placeholder="文唱堂印刷株式会社"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-3">
-          <input
-            type="checkbox"
-            id="smtpSecure"
-            checked={settings.smtp.secure}
-            onChange={(e) => handleSMTPChange('secure', e.target.checked)}
-            className={checkboxClass}
-          />
-          <label htmlFor="smtpSecure" className="text-sm font-medium text-slate-700 dark:text-slate-300">
-            SSL/TLSを使用する (通常ポート465の場合に有効)
-          </label>
-        </div>
-      </div>
 
       {/* 通知タイプ設定 */}
       <div className="space-y-4">
@@ -385,14 +251,15 @@ const EmailNotificationSettings: React.FC = () => {
             onChange={(e) => setTestEmail(e.target.value)}
             className={inputClass}
             placeholder="テスト送信先メールアドレス"
+            disabled={!settings.enableNotifications}
           />
           <button
-            onClick={testEmailConfiguration}
-            disabled={isTesting || !testEmail}
-            className="bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed"
-          >
-            {isTesting ? '送信中...' : 'テストメール送信'}
-          </button>
+  onClick={testEmailConfiguration}
+  disabled={isTesting || !testEmail || !settings.enableNotifications}
+  className="bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed"
+>
+  {isTesting ? '送信中...' : 'テストメール送信'}
+</button>
         </div>
       </div>
 

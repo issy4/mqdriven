@@ -122,6 +122,7 @@ const EmailNotificationSettings: React.FC<{
           </button>
         </div>
 
+        <div className="p-6 space-y-6">
         {/* 基本設定 */}
 <div className="space-y-4">
   <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-4">
@@ -324,6 +325,7 @@ const EmailNotificationSettings: React.FC<{
   </div>
 </div>
 
+        </div>
         <div className="flex justify-end gap-3 p-6 border-t border-slate-200 dark:border-slate-700">
           <button
             onClick={onClose}
