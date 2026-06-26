@@ -319,8 +319,8 @@ const PAGE_TITLES: Record<Page, string> = {
     quote_center: '見積作成センター',
     sales_orders: '受発注管理',
     project_management: 'プロジェクト管理',
-    sales_billing: '請求管理',
-    legacy_billing: '請求書発行・送信管理',
+    sales_billing: '請求書発行・送信管理',
+    legacy_billing: '請求管理',
     analysis_ranking: 'ランキング分析',
     purchasing_orders: '発注管理',
     purchasing_invoices: '請求書インポート',
@@ -1644,8 +1644,6 @@ const App: React.FC = () => {
                 return <OrderForm onBack={() => handleNavigate('business_forms_hub')} />;
             case 'business_production':
                 return <ProductionOrderForm onBack={() => handleNavigate('business_forms_hub')} />;
-            case 'business_delivery':
-                return <DeliverySlipForm onBack={() => handleNavigate('business_forms_hub')} />;
             case 'detailed_estimate':
                 return (
                     <DetailedEstimateForm
