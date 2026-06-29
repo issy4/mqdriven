@@ -60,6 +60,11 @@ import {
     AnalysisHistory,
     FixedCost,
     Machine,
+    OrderLedgerRow,
+    MonthlyOrderDashboardRow,
+    MonthlyOrderUserDashboardRow,
+    MonthlyOrderCustomerRankingRow,
+    SalesTargetUser,
 } from '../types';
 import type { CalendarEvent } from '../types';
 
@@ -1674,7 +1679,7 @@ const calculateCustomerBudgetsManually = async (): Promise<CustomerBudgetSummary
         ordersByProject.get(order.project_id).push(order);
     });
 
-    // 鬘ｧ螳｢蛻･髮��ｨ��ｒ菴懈・
+    // 鬘ｧ螳｢蛻･髮���ｨ��ｒ菴懈・
     const customerBudgets: CustomerBudgetSummary[] = [];
 
     for (const [customerKey, customerProjects] of projectByCustomer) {
@@ -5564,7 +5569,7 @@ export const getApplicationsDailyCreation = async (): Promise<any[]> => {
 
 /**
  * ステータス別申請件数を取得
- * @returns ステータス別の申請件数と割合
+ * @returns ステータス別の申請件数と���合
  */
 export const getApplicationsByStatus = async (): Promise<any[]> => {
     const supabase = getSupabase();
@@ -6404,4 +6409,340 @@ export const createExpenseInvoice = async (params: CreateExpenseInvoiceParams): 
         console.error('[createExpenseInvoice] Unexpected error:', err);
         return null;
     }
+};
+
+// =====================================================================
+// 受注台帳・目標管理 (Order Ledger / Sales Target Management)
+// =====================================================================
+
+// 対象月(YYYY-MM-01)から月初・翌月初の境界文字列を返す
+const getMonthBoundaries = (month: string): { start: string; end: string; monthStart: string } => {
+    // month は 'YYYY-MM' または 'YYYY-MM-01' を想定
+    const normalized = /^\d{4}-\d{2}/.test(month) ? month.slice(0, 7) : new Date().toISOString().slice(0, 7);
+    const [yearStr, monthStr] = normalized.split('-');
+    const year = Number(yearStr);
+    const mon = Number(monthStr);
+    const monthStart = `${yearStr}-${monthStr}-01`;
+    const nextYear = mon === 12 ? year + 1 : year;
+    const nextMon = mon === 12 ? 1 : mon + 1;
+    const end = `${nextYear}-${String(nextMon).padStart(2, '0')}-01`;
+    return { start: monthStart, end, monthStart };
+};
+
+// order_date(text) を安全に Date に変換。不正・null は null。
+const parseOrderDateSafe = (value: unknown): Date | null => {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    // YYYY-MM-DD / YYYY/MM/DD 等を許容
+    const normalized = text.replace(/\//g, '-').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+        const parsed = new Date(text);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    const parsed = new Date(`${normalized}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+export interface OrderLedgerFilters {
+    month: string;
+    salesUserId?: string;
+    keyword?: string;
+}
+
+export const getOrderLedger = async (filters: OrderLedgerFilters): Promise<OrderLedgerRow[]> => {
+    const supabase = getSupabase();
+    const { start, end } = getMonthBoundaries(filters.month);
+
+    const { data, error } = await supabase
+        .from('vw_order_ledger')
+        .select('*');
+    ensureSupabaseSuccess(error, 'Failed to fetch order ledger');
+
+    let rows: any[] = data || [];
+
+    // order_date は text 型のため、クライアント側で月範囲を判定
+    rows = rows.filter(row => {
+        const d = parseOrderDateSafe(row.order_date);
+        if (!d) return false;
+        const startDate = new Date(`${start}T00:00:00`);
+        const endDate = new Date(`${end}T00:00:00`);
+        return d >= startDate && d < endDate;
+    });
+
+    // 営業担当で絞り込み
+    if (filters.salesUserId) {
+        rows = rows.filter(row => toStringOrNull(row.sales_user_id) === filters.salesUserId);
+    }
+
+    // 顧客名・営業担当名の補完
+    const needCustomerIds = new Set<string>();
+    const needUserIds = new Set<string>();
+    rows.forEach(row => {
+        if (!toStringOrNull(row.customer_name) && toStringOrNull(row.customer_id)) {
+            needCustomerIds.add(String(row.customer_id));
+        }
+        if (!toStringOrNull(row.sales_user_name) && toStringOrNull(row.sales_user_id)) {
+            needUserIds.add(String(row.sales_user_id));
+        }
+    });
+
+    const customerNameById = new Map<string, string>();
+    if (needCustomerIds.size > 0) {
+        const { data: customerRows, error: customerError } = await supabase
+            .from('customers')
+            .select('id, customer_name')
+            .in('id', Array.from(needCustomerIds));
+        if (customerError) {
+            console.warn('Failed to fetch customers for order ledger:', customerError.message);
+        } else {
+            (customerRows || []).forEach(c => {
+                if (c.id) customerNameById.set(String(c.id), c.customer_name || '');
+            });
+        }
+    }
+
+    const userNameById = new Map<string, string>();
+    if (needUserIds.size > 0) {
+        const { data: userRows, error: userError } = await supabase
+            .from('users')
+            .select('id, name')
+            .in('id', Array.from(needUserIds));
+        if (userError) {
+            console.warn('Failed to fetch users for order ledger:', userError.message);
+        } else {
+            (userRows || []).forEach(u => {
+                if (u.id) userNameById.set(String(u.id), (u as any).name || '');
+            });
+        }
+    }
+
+    let result: OrderLedgerRow[] = rows.map(row => {
+        const customerId = toStringOrNull(row.customer_id);
+        const salesUserId = toStringOrNull(row.sales_user_id);
+        const customerName = toStringOrNull(row.customer_name)
+            ?? (customerId ? toStringOrNull(customerNameById.get(customerId)) : null);
+        const salesUserName = toStringOrNull(row.sales_user_name)
+            ?? (salesUserId ? toStringOrNull(userNameById.get(salesUserId)) : null);
+        return {
+            project_uuid: row.project_uuid,
+            project_id: toStringOrNull(row.project_id),
+            project_code: toStringOrNull(row.project_code),
+            project_name: toStringOrNull(row.project_name),
+            order_code: toStringOrNull(row.order_code),
+            customer_code: toStringOrNull(row.customer_code),
+            customer_id: customerId,
+            customer_name: customerName,
+            sales_user_code: toStringOrNull(row.sales_user_code),
+            sales_user_id: salesUserId,
+            sales_user_name: salesUserName,
+            project_delivery_date: toStringOrNull(row.project_delivery_date),
+            order_id: toStringOrNull(row.order_id),
+            order_date: toStringOrNull(row.order_date),
+            order_amount_ex_tax: toNumberOrNull(row.order_amount_ex_tax),
+            order_amount_in_tax: toNumberOrNull(row.order_amount_in_tax),
+            order_delivery_date: toStringOrNull(row.order_delivery_date),
+            delivery_date: toStringOrNull(row.delivery_date),
+            order_amount_for_report: toNumberOrZero(row.order_amount_for_report),
+        };
+    });
+
+    // キーワード部分一致(受注番号・案件名・顧客コード・顧客名)
+    const keyword = filters.keyword?.trim().toLowerCase();
+    if (keyword) {
+        result = result.filter(row => {
+            const haystack = [
+                row.order_code,
+                row.project_name,
+                row.customer_code,
+                row.customer_name,
+            ].map(v => (v || '').toLowerCase());
+            return haystack.some(v => v.includes(keyword));
+        });
+    }
+
+    // 受注日降順
+    result.sort((a, b) => {
+        const da = parseOrderDateSafe(a.order_date)?.getTime() ?? 0;
+        const db = parseOrderDateSafe(b.order_date)?.getTime() ?? 0;
+        return db - da;
+    });
+
+    return result;
+};
+
+export const getMonthlyOrderDashboard = async (month: string): Promise<MonthlyOrderDashboardRow> => {
+    const supabase = getSupabase();
+    const { monthStart } = getMonthBoundaries(month);
+
+    const { data, error } = await supabase
+        .from('vw_monthly_order_dashboard')
+        .select('*')
+        .eq('target_month', monthStart)
+        .maybeSingle();
+    ensureSupabaseSuccess(error, 'Failed to fetch monthly order dashboard');
+
+    if (!data) {
+        return { target_month: monthStart, actual_amount: 0, order_count: 0 };
+    }
+
+    return {
+        target_month: monthStart,
+        actual_amount: toNumberOrZero(data.actual_amount),
+        order_count: toNumberOrZero(data.order_count),
+    };
+};
+
+export const getMonthlyOrderDashboardByUser = async (month: string): Promise<MonthlyOrderUserDashboardRow[]> => {
+    const supabase = getSupabase();
+    const { monthStart } = getMonthBoundaries(month);
+
+    const { data, error } = await supabase
+        .from('vw_monthly_order_dashboard_by_user')
+        .select('*')
+        .eq('target_month', monthStart);
+    ensureSupabaseSuccess(error, 'Failed to fetch monthly order dashboard by user');
+
+    const rows: MonthlyOrderUserDashboardRow[] = (data || []).map(row => {
+        const targetAmount = toNumberOrNull(row.target_amount);
+        return {
+            target_month: monthStart,
+            user_id: String(row.user_id),
+            user_name: toStringOrNull(row.user_name),
+            department_id: toStringOrNull(row.department_id),
+            actual_amount: toNumberOrZero(row.actual_amount),
+            order_count: toNumberOrZero(row.order_count),
+            target_amount: targetAmount,
+            target_note: toStringOrNull(row.target_note),
+            gap_amount: toNumberOrNull(row.gap_amount),
+            achievement_rate: toNumberOrNull(row.achievement_rate),
+        };
+    });
+
+    // 実績がある or 目標登録済みのみ
+    const filtered = rows.filter(row => row.actual_amount > 0 || row.order_count > 0 || row.target_amount !== null);
+
+    // 実績降順
+    filtered.sort((a, b) => b.actual_amount - a.actual_amount);
+    return filtered;
+};
+
+export const getMonthlyOrderCustomerRanking = async (
+    month: string,
+    salesUserId?: string,
+): Promise<MonthlyOrderCustomerRankingRow[]> => {
+    const supabase = getSupabase();
+    const { monthStart } = getMonthBoundaries(month);
+
+    let query = supabase
+        .from('vw_monthly_order_customer_ranking')
+        .select('*')
+        .eq('target_month', monthStart);
+
+    if (salesUserId) {
+        query = query.eq('sales_user_id', salesUserId);
+    }
+
+    const { data, error } = await query;
+    ensureSupabaseSuccess(error, 'Failed to fetch monthly order customer ranking');
+
+    let rows: MonthlyOrderCustomerRankingRow[] = (data || []).map(row => ({
+        target_month: monthStart,
+        customer_id: toStringOrNull(row.customer_id),
+        customer_code: toStringOrNull(row.customer_code),
+        customer_name: row.customer_name || '未設定',
+        sales_user_id: toStringOrNull(row.sales_user_id),
+        sales_user_name: toStringOrNull(row.sales_user_name),
+        actual_amount: toNumberOrZero(row.actual_amount),
+        order_count: toNumberOrZero(row.order_count),
+        monthly_rank: toNumberOrZero(row.monthly_rank),
+    }));
+
+    // 受注額降順
+    rows.sort((a, b) => b.actual_amount - a.actual_amount);
+
+    // 営業担当を絞り込んだ場合は順位を振り直す
+    if (salesUserId) {
+        rows = rows.map((row, index) => ({ ...row, monthly_rank: index + 1 }));
+    }
+
+    return rows;
+};
+
+export const getSalesTargetUsers = async (): Promise<SalesTargetUser[]> => {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+        .from('vw_sales_target_users')
+        .select('*');
+    ensureSupabaseSuccess(error, 'Failed to fetch sales target users');
+
+    const rows: SalesTargetUser[] = (data || []).map(row => ({
+        user_id: String(row.user_id),
+        user_name: row.user_name || '',
+        user_code: toStringOrNull(row.user_code),
+        department_id: toStringOrNull(row.department_id),
+        is_active: row.is_active !== false,
+    }));
+
+    rows.sort((a, b) => a.user_name.localeCompare(b.user_name, 'ja'));
+    return rows;
+};
+
+export interface SaveSalesTargetInput {
+    month: string;
+    userId: string;
+    targetAmount: number;
+    note?: string | null;
+    createdBy?: string | null;
+}
+
+export const saveSalesTarget = async (input: SaveSalesTargetInput): Promise<MonthlyOrderUserDashboardRow | null> => {
+    const supabase = getSupabase();
+    const { monthStart } = getMonthBoundaries(input.month);
+
+    // 金額の正規化：0以上の整数、不正・マイナスは0
+    const parsedAmount = parseNumericValue(input.targetAmount);
+    const safeAmount = parsedAmount !== null && parsedAmount > 0 ? Math.round(parsedAmount) : 0;
+
+    const payload = {
+        target_month: monthStart,
+        target_scope: 'user' as const,
+        user_id: input.userId,
+        department_id: null,
+        target_amount: safeAmount,
+        note: toStringOrNull(input.note),
+        created_by: input.createdBy ?? null,
+        updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+        .from('sales_targets')
+        .upsert(payload, { onConflict: 'target_month,user_id' });
+    ensureSupabaseSuccess(error, 'Failed to save sales target');
+
+    // 保存済みデータを再取得して返す
+    const { data, error: fetchError } = await supabase
+        .from('vw_monthly_order_dashboard_by_user')
+        .select('*')
+        .eq('target_month', monthStart)
+        .eq('user_id', input.userId)
+        .maybeSingle();
+    if (fetchError) {
+        console.warn('Failed to refetch saved sales target:', fetchError.message);
+        return null;
+    }
+    if (!data) return null;
+
+    return {
+        target_month: monthStart,
+        user_id: String(data.user_id),
+        user_name: toStringOrNull(data.user_name),
+        department_id: toStringOrNull(data.department_id),
+        actual_amount: toNumberOrZero(data.actual_amount),
+        order_count: toNumberOrZero(data.order_count),
+        target_amount: toNumberOrNull(data.target_amount),
+        target_note: toStringOrNull(data.target_note),
+        gap_amount: toNumberOrNull(data.gap_amount),
+        achievement_rate: toNumberOrNull(data.achievement_rate),
+    };
 };
