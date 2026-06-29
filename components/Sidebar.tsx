@@ -40,7 +40,7 @@ const BASE_NAV_CATEGORIES: NavCategoryType[] = [
       { page: 'sales_customers', name: '取引先Master' },
       { page: 'sales_customers_chart', name: '顧客カルテ/ランキング分析' },
       { page: 'sales_estimates', name: '見積管理' },
-      { page: 'sales_orders', name: '受注管理' },
+      { page: 'sales_orders', name: '受注台帳・目標管理' },
       { page: 'sales_billing', name: '請求書発行・送信管理' },
       { page: 'legacy_billing', name: '請求管理' },
     ],

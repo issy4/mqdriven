@@ -1329,7 +1329,7 @@ export interface SaleRecord {
   estVQ: number; // 見積変動費
   estMQ: number; // 見積限界利益
   finalPQ: number; // 確定売上
-  finalVQ: number; // 確定変動費
+  finalVQ: number; // 確定変��費
   finalMQ: number; // 確定限界利益
   materialCost?: number;   // 変動費内訳: 材料費
   outsourcingCost?: number; // 変動費内訳: 外注費
@@ -1523,4 +1523,67 @@ export interface EstimateState {
   scenarios: Scenario[];
   engineParams: EngineParameters;
   groundingSources: GroundingSource[];
+}
+
+// --- 受注台帳・目標管理 (Order Ledger / Sales Target Management) ---
+
+export interface OrderLedgerRow {
+  project_uuid: string;
+  project_id?: string | null;
+  project_code?: string | null;
+  project_name?: string | null;
+  order_code?: string | null;
+  customer_code?: string | null;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  sales_user_code?: string | null;
+  sales_user_id?: string | null;
+  sales_user_name?: string | null;
+  project_delivery_date?: string | null;
+  order_id?: string | null;
+  order_date?: string | null;
+  order_amount_ex_tax?: number | null;
+  order_amount_in_tax?: number | null;
+  order_delivery_date?: string | null;
+  delivery_date?: string | null;
+  order_amount_for_report?: number | null;
+}
+
+export interface MonthlyOrderDashboardRow {
+  target_month: string;
+  actual_amount: number;
+  order_count: number;
+}
+
+export interface MonthlyOrderUserDashboardRow {
+  target_month: string;
+  user_id: string;
+  user_name?: string | null;
+  department_id?: string | null;
+  actual_amount: number;
+  order_count: number;
+  target_amount?: number | null;
+  target_note?: string | null;
+  gap_amount?: number | null;
+  achievement_rate?: number | null;
+}
+
+export interface MonthlyOrderCustomerRankingRow {
+  target_month: string;
+  customer_id?: string | null;
+  customer_code?: string | null;
+  customer_name: string;
+  sales_user_id?: string | null;
+  sales_user_name?: string | null;
+  actual_amount: number;
+  order_count: number;
+  monthly_rank: number;
+}
+
+export interface SalesTargetUser {
+  user_id: string;
+  user_name: string;
+  user_code?: string | null;
+  department_id?: string | null;
+  is_active: boolean;
 }

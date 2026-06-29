@@ -208,7 +208,7 @@ import STRACAnalysisPage from './components/analysis/STRACAnalysisPage';
 import { ToastContainer } from './components/Toast';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import SalesDashboard from './components/sales/SalesDashboard';
-import SalesOrdersPage from './components/sales/SalesOrdersPage';
+import OrderLedgerManagementPage from './components/sales/OrderLedgerManagementPage';
 import ManufacturingCostManagement from './components/accounting/ManufacturingCostManagement';
 import AuditLogPage from './components/admin/AuditLogPage';
 import JournalQueuePage from './components/admin/JournalQueuePage';
@@ -317,7 +317,7 @@ const PAGE_TITLES: Record<Page, string> = {
     sales_pipeline: 'パイプライン',
     sales_estimates: '見積管理',
     quote_center: '見積作成センター',
-    sales_orders: '受発注管理',
+    sales_orders: '受注台帳・目標管理',
     project_management: 'プロジェクト管理',
     sales_billing: '請求書発行・送信管理',
     legacy_billing: '請求管理',
@@ -403,7 +403,6 @@ const APPLICATION_FORM_PAGE_MAP: Partial<Record<string, Page>> = {
 };
 
 const PRIMARY_ACTION_ENABLED_PAGES: Page[] = [
-    'sales_orders',
     'sales_leads',
     'sales_customers',
     'sales_customers_chart',
@@ -414,7 +413,6 @@ const PRIMARY_ACTION_ENABLED_PAGES: Page[] = [
 ];
 
 const SEARCH_ENABLED_PAGES: Page[] = [
-    'sales_orders',
     'sales_customers',
     'sales_customers_chart',
     'sales_leads',
@@ -424,7 +422,6 @@ const SEARCH_ENABLED_PAGES: Page[] = [
 ];
 
 const PREDICTIVE_SUGGESTION_PAGES: Page[] = [
-    'sales_orders',
     'sales_customers',
     'sales_customers_chart',
 ];
@@ -589,7 +586,7 @@ const App: React.FC = () => {
     const isAuthCallbackRoute = shouldRequireAuth && typeof window !== 'undefined' && window.location.pathname.startsWith('/auth/callback');
 
     const predictiveSuggestions = useMemo<PredictiveSuggestion[]>(() => {
-        const predictiveSuggestionPages: Page[] = ['sales_orders', 'sales_customers', 'sales_estimates'];
+        const predictiveSuggestionPages: Page[] = ['sales_customers', 'sales_estimates'];
         if (!predictiveSuggestionPages.includes(currentPage)) return [];
         const keyword = searchTerm.trim().toLowerCase();
         if (!keyword) return [];
@@ -1407,16 +1404,9 @@ const App: React.FC = () => {
                 return <SalesDashboard jobs={jobs} leads={leads} />;
             case 'sales_orders':
                 return (
-                    <SalesOrdersPage
-                        projectSummaries={jobs || []}
-                        orders={purchaseOrders || []}
-                        searchTerm={searchTerm}
-                        isLoading={isLoading}
-                        onRefresh={loadAllData}
-                        onSelectJob={(job) => { setSelectedJob(job); setJobDetailModalOpen(true); }}
-                        onNewJob={() => setCreateJobModalOpen(true)}
-                        addToast={addToast}
+                    <OrderLedgerManagementPage
                         currentUser={currentUser}
+                        onToast={addToast}
                     />
                 );
             case 'sales_customers':
