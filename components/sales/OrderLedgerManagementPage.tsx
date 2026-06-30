@@ -8,6 +8,7 @@ import {
   MonthlyOrderUserDashboardRow,
   MonthlyOrderCustomerRankingRow,
   SalesTargetUser,
+  SalesAnnualTarget,
 } from '../../types';
 import {
   getOrderLedger,
@@ -16,6 +17,8 @@ import {
   getMonthlyOrderCustomerRanking,
   getSalesTargetUsers,
   saveSalesTarget,
+  getSalesAnnualTargets,
+  saveSalesAnnualTarget,
 } from '../../services/dataService';
 import { formatJPY } from '../../utils';
 
@@ -31,6 +34,14 @@ const LEDGER_PAGE_SIZE = 50;
 const RANKING_INITIAL = 30;
 
 const getCurrentMonth = (): string => new Date().toISOString().slice(0, 7);
+
+const getFiscalYearFromMonth = (month: string): number => {
+  const [yearText, monthText] = month.split('-');
+  const year = Number(yearText);
+  const monthNumber = Number(monthText);
+
+  return monthNumber >= 6 ? year : year - 1;
+};
 
 const formatDateDisplay = (value?: string | null): string => {
   if (!value) return '未設定';
@@ -98,6 +109,9 @@ const OrderLedgerManagementPage: React.FC<OrderLedgerManagementPageProps> = ({ c
 
   const [month, setMonth] = useState<string>(getCurrentMonth());
   const [salesUserId, setSalesUserId] = useState<string>(SALES_ALL);
+
+  const fiscalYear = useMemo(() => getFiscalYearFromMonth(month), [month]);
+
   const [keywordInput, setKeywordInput] = useState<string>('');
   const [appliedKeyword, setAppliedKeyword] = useState<string>('');
   const [activeTab, setActiveTab] = useState<TabKey>('ledger');
@@ -109,6 +123,11 @@ const OrderLedgerManagementPage: React.FC<OrderLedgerManagementPageProps> = ({ c
   const [ranking, setRanking] = useState<MonthlyOrderCustomerRankingRow[]>([]);
   const [monthlyTrend, setMonthlyTrend] = useState<MonthlyOrderDashboardRow[]>([]);
   const [targetUsers, setTargetUsers] = useState<SalesTargetUser[]>([]);
+
+  const [annualTargets, setAnnualTargets] = useState<SalesAnnualTarget[]>([]);
+  const [annualEditUserId, setAnnualEditUserId] = useState<string | null>(null);
+  const [annualEditAmount, setAnnualEditAmount] = useState<string>('');
+  const [annualEditNote, setAnnualEditNote] = useState<string>('');
 
   const [ledgerVisible, setLedgerVisible] = useState<number>(LEDGER_PAGE_SIZE);
   const [rankingVisible, setRankingVisible] = useState<number>(RANKING_INITIAL);
@@ -167,6 +186,16 @@ const OrderLedgerManagementPage: React.FC<OrderLedgerManagementPageProps> = ({ c
         console.error('[OrderLedger] failed to load target users:', err);
       });
   }, []);
+
+  // 年間目標の取得
+useEffect(() => {
+  getSalesAnnualTargets(fiscalYear)
+    .then(setAnnualTargets)
+    .catch(err => {
+      console.error('[OrderLedger] failed to load annual targets:', err);
+      onToast?.('年間目標の取得に失敗しました。', 'error');
+    });
+}, [fiscalYear, onToast]);
 
   const handleSearch = () => {
     setAppliedKeyword(keywordInput);
@@ -297,6 +326,65 @@ const OrderLedgerManagementPage: React.FC<OrderLedgerManagementPageProps> = ({ c
       setAddNote('');
     }
   };
+
+  const getAnnualTargetForUser = (userId: string): SalesAnnualTarget | undefined =>
+  annualTargets.find(target => target.user_id === userId);
+
+const startAnnualEdit = (userId: string) => {
+  const current = getAnnualTargetForUser(userId);
+
+  setAnnualEditUserId(userId);
+  setAnnualEditAmount(
+    current ? String(current.annual_target_amount) : '',
+  );
+  setAnnualEditNote(current?.note ?? '');
+};
+
+const cancelAnnualEdit = () => {
+  setAnnualEditUserId(null);
+  setAnnualEditAmount('');
+  setAnnualEditNote('');
+};
+
+const saveAnnualTarget = async (userId: string) => {
+  setIsSaving(true);
+
+  try {
+    const numeric = Number(
+      String(annualEditAmount).replace(/[^\d.-]/g, ''),
+    );
+
+    const annualTargetAmount =
+      Number.isFinite(numeric) && numeric > 0
+        ? Math.round(numeric)
+        : 0;
+
+    await saveSalesAnnualTarget({
+      fiscalYear,
+      userId,
+      annualTargetAmount,
+      note: annualEditNote.trim() || null,
+      createdBy: currentUser?.id ?? null,
+    });
+
+    const refreshedAnnualTargets = await getSalesAnnualTargets(fiscalYear);
+    setAnnualTargets(refreshedAnnualTargets);
+
+    await reloadAfterSave();
+
+    onToast?.(
+      `${fiscalYear}年度の年間目標を保存しました。`,
+      'success',
+    );
+
+    cancelAnnualEdit();
+  } catch (err) {
+    console.error('[OrderLedger] save annual target failed:', err);
+    onToast?.('年間目標の保存に失敗しました。', 'error');
+  } finally {
+    setIsSaving(false);
+  }
+};
 
   const tabs: { key: TabKey; label: string; icon: React.ElementType }[] = [
     { key: 'ledger', label: '受注台帳', icon: ClipboardList },
@@ -633,25 +721,42 @@ const OrderLedgerManagementPage: React.FC<OrderLedgerManagementPageProps> = ({ c
                     const target = row.target_amount ?? null;
                     const rate = target && target > 0 ? (row.actual_amount / target) * 100 : null;
                     const gap = target !== null ? row.actual_amount - target : null;
-                    const isEditing = editingUserId === row.user_id;
+
+                    const annualTarget = getAnnualTargetForUser(row.user_id);
+                    const isAnnualEditing = annualEditUserId === row.user_id;
+
+                    const annualAmount = annualTarget?.annual_target_amount ?? null;
+                    const monthlyAutoTarget =
+                      annualAmount !== null
+                        ? Math.round(annualAmount / 12)
+                        : null;
+
                     return (
                       <tr key={row.user_id} className="border-t border-slate-100 hover:bg-slate-50 align-top">
                         <td className="px-3 py-2 whitespace-nowrap text-slate-700 font-medium">{row.user_name || '未設定'}</td>
                         <td className="px-3 py-2 whitespace-nowrap text-right tabular-nums text-slate-800">{formatJPY(row.actual_amount)}</td>
                         <td className="px-3 py-2 whitespace-nowrap text-right tabular-nums text-slate-600">{row.order_count.toLocaleString('ja-JP')}</td>
                         <td className="px-3 py-2 whitespace-nowrap text-right tabular-nums text-slate-700">
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              min={0}
-                              value={editAmount}
-                              onChange={(e) => setEditAmount(e.target.value)}
-                              className="h-8 px-2 border border-slate-300 rounded-md text-sm w-28 text-right"
-                            />
-                          ) : (
-                            target !== null ? formatJPY(target) : '未設定'
-                          )}
-                        </td>
+  {isAnnualEditing ? (
+    <input
+      type="number"
+      min={0}
+      value={annualEditAmount}
+      onChange={(e) => setAnnualEditAmount(e.target.value)}
+      placeholder="年間目標"
+      className="h-8 px-2 border border-slate-300 rounded-md text-sm w-32 text-right"
+    />
+  ) : (
+    <div>
+      <div>{target !== null ? formatJPY(target) : '未設定'}</div>
+      {annualAmount !== null && (
+        <div className="mt-0.5 text-xs text-slate-400">
+          年間 {formatJPY(annualAmount)}
+        </div>
+      )}
+    </div>
+  )}
+</td>
                         <td className="px-3 py-2 whitespace-nowrap text-right tabular-nums">
                           {gap === null ? (
   <span className="text-slate-400">—</span>
@@ -673,48 +778,54 @@ const OrderLedgerManagementPage: React.FC<OrderLedgerManagementPageProps> = ({ c
                           {rate !== null ? `${rate.toFixed(1)}%` : '—'}
                         </td>
                         <td className="px-3 py-2 text-slate-600">
-                          {isEditing ? (
-                            <input
-                              type="text"
-                              value={editNote}
-                              onChange={(e) => setEditNote(e.target.value)}
-                              placeholder="備考"
-                              className="h-8 px-2 border border-slate-300 rounded-md text-sm w-40"
-                            />
-                          ) : (
-                            row.target_note || '—'
-                          )}
-                        </td>
+  {isAnnualEditing ? (
+    <input
+      type="text"
+      value={annualEditNote}
+      onChange={(e) => setAnnualEditNote(e.target.value)}
+      placeholder="年間目標の備考"
+      className="h-8 px-2 border border-slate-300 rounded-md text-sm w-40"
+    />
+  ) : (
+    annualTarget?.note ||
+    row.target_note ||
+    '—'
+  )}
+</td>
                         {canEditTargets && (
                           <td className="px-3 py-2 whitespace-nowrap">
-                            {isEditing ? (
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => submitEdit(row.user_id)}
-                                  disabled={isSaving}
-                                  className="px-2 py-1 inline-flex items-center gap-1 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 text-white text-xs font-semibold rounded"
-                                >
-                                  <Check className="w-3.5 h-3.5" />保存
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={cancelEdit}
-                                  className="px-2 py-1 inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-medium rounded"
-                                >
-                                  <X className="w-3.5 h-3.5" />取消
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => startEdit(row)}
-                                className="px-2 py-1 inline-flex items-center gap-1 text-teal-700 hover:bg-teal-50 text-xs font-medium rounded"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />編集
-                              </button>
-                            )}
-                          </td>
+  {isAnnualEditing ? (
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => saveAnnualTarget(row.user_id)}
+        disabled={isSaving}
+        className="px-2 py-1 inline-flex items-center gap-1 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 text-white text-xs font-semibold rounded"
+      >
+        <Check className="w-3.5 h-3.5" />
+        保存
+      </button>
+
+      <button
+        type="button"
+        onClick={cancelAnnualEdit}
+        className="px-2 py-1 inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-medium rounded"
+      >
+        <X className="w-3.5 h-3.5" />
+        取消
+      </button>
+    </div>
+  ) : (
+    <button
+      type="button"
+      onClick={() => startAnnualEdit(row.user_id)}
+      className="px-2 py-1 inline-flex items-center gap-1 text-teal-700 hover:bg-teal-50 text-xs font-medium rounded"
+    >
+      <Edit2 className="w-3.5 h-3.5" />
+      年間目標を編集
+    </button>
+  )}
+</td>
                         )}
                       </tr>
                     );
