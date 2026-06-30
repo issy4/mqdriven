@@ -6450,125 +6450,196 @@ export interface OrderLedgerFilters {
     keyword?: string;
 }
 
-export const getOrderLedger = async (filters: OrderLedgerFilters): Promise<OrderLedgerRow[]> => {
-    const supabase = getSupabase();
-    const { start, end } = getMonthBoundaries(filters.month);
+export const getOrderLedger = async (
+  filters: OrderLedgerFilters,
+): Promise<OrderLedgerRow[]> => {
+  const supabase = getSupabase();
 
+  const monthPrefix = String(filters.month || '').slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(monthPrefix)) {
+    throw new Error(`Invalid target month: ${filters.month}`);
+  }
+
+  // PostgREST の取得上限に左右されないよう、全件をページング取得
+  const pageSize = 1000;
+  const rawRows: any[] = [];
+  let from = 0;
+
+  while (true) {
     const { data, error } = await supabase
-        .from('vw_order_ledger')
-        .select('*');
+      .from('vw_order_ledger')
+      .select('*')
+      .range(from, from + pageSize - 1);
+
     ensureSupabaseSuccess(error, 'Failed to fetch order ledger');
 
-    let rows: any[] = data || [];
+    const batch = data || [];
+    rawRows.push(...batch);
 
-    // order_date は text 型のため、クライアント側で月範囲を判定
-    rows = rows.filter(row => {
-        const d = parseOrderDateSafe(row.order_date);
-        if (!d) return false;
-        const startDate = new Date(`${start}T00:00:00`);
-        const endDate = new Date(`${end}T00:00:00`);
-        return d >= startDate && d < endDate;
-    });
-
-    // 営業担当で絞り込み
-    if (filters.salesUserId) {
-        rows = rows.filter(row => toStringOrNull(row.sales_user_id) === filters.salesUserId);
+    if (batch.length < pageSize) {
+      break;
     }
 
-    // 顧客名・営業担当名の補完
-    const needCustomerIds = new Set<string>();
-    const needUserIds = new Set<string>();
-    rows.forEach(row => {
-        if (!toStringOrNull(row.customer_name) && toStringOrNull(row.customer_id)) {
-            needCustomerIds.add(String(row.customer_id));
-        }
-        if (!toStringOrNull(row.sales_user_name) && toStringOrNull(row.sales_user_id)) {
-            needUserIds.add(String(row.sales_user_id));
-        }
-    });
+    from += pageSize;
+  }
 
-    const customerNameById = new Map<string, string>();
-    if (needCustomerIds.size > 0) {
-        const { data: customerRows, error: customerError } = await supabase
-            .from('customers')
-            .select('id, customer_name')
-            .in('id', Array.from(needCustomerIds));
-        if (customerError) {
-            console.warn('Failed to fetch customers for order ledger:', customerError.message);
-        } else {
-            (customerRows || []).forEach(c => {
-                if (c.id) customerNameById.set(String(c.id), c.customer_name || '');
-            });
-        }
+  console.log('[OrderLedger] raw ledger rows', {
+    total: rawRows.length,
+    monthPrefix,
+  });
+
+  // order_date は text 型なので、日付変換ではなく YYYY-MM の先頭一致で絞る
+  let rows = rawRows.filter(row => {
+    const orderDate = String(row.order_date || '')
+      .trim()
+      .replace(/\//g, '-');
+
+    return orderDate.startsWith(monthPrefix);
+  });
+
+  console.log('[OrderLedger] month-filtered rows', {
+    monthPrefix,
+    count: rows.length,
+  });
+
+  // 営業担当で絞り込み
+  if (filters.salesUserId) {
+    rows = rows.filter(
+      row => toStringOrNull(row.sales_user_id) === filters.salesUserId,
+    );
+  }
+
+  // 顧客名・営業担当名の補完対象を収集
+  const needCustomerIds = new Set<string>();
+  const needUserIds = new Set<string>();
+
+  rows.forEach(row => {
+    const customerId = toStringOrNull(row.customer_id);
+    const salesUserId = toStringOrNull(row.sales_user_id);
+
+    if (!toStringOrNull(row.customer_name) && customerId) {
+      needCustomerIds.add(customerId);
     }
 
-    const userNameById = new Map<string, string>();
-    if (needUserIds.size > 0) {
-        const { data: userRows, error: userError } = await supabase
-            .from('users')
-            .select('id, name')
-            .in('id', Array.from(needUserIds));
-        if (userError) {
-            console.warn('Failed to fetch users for order ledger:', userError.message);
-        } else {
-            (userRows || []).forEach(u => {
-                if (u.id) userNameById.set(String(u.id), (u as any).name || '');
-            });
+    if (!toStringOrNull(row.sales_user_name) && salesUserId) {
+      needUserIds.add(salesUserId);
+    }
+  });
+
+  const customerNameById = new Map<string, string>();
+
+  if (needCustomerIds.size > 0) {
+    const { data: customerRows, error: customerError } = await supabase
+      .from('customers')
+      .select('id, customer_name')
+      .in('id', Array.from(needCustomerIds));
+
+    if (customerError) {
+      console.warn(
+        '[OrderLedger] Failed to fetch customers:',
+        customerError.message,
+      );
+    } else {
+      (customerRows || []).forEach(customer => {
+        if (customer.id) {
+          customerNameById.set(
+            String(customer.id),
+            customer.customer_name || '',
+          );
         }
+      });
     }
+  }
 
-    let result: OrderLedgerRow[] = rows.map(row => {
-        const customerId = toStringOrNull(row.customer_id);
-        const salesUserId = toStringOrNull(row.sales_user_id);
-        const customerName = toStringOrNull(row.customer_name)
-            ?? (customerId ? toStringOrNull(customerNameById.get(customerId)) : null);
-        const salesUserName = toStringOrNull(row.sales_user_name)
-            ?? (salesUserId ? toStringOrNull(userNameById.get(salesUserId)) : null);
-        return {
-            project_uuid: row.project_uuid,
-            project_id: toStringOrNull(row.project_id),
-            project_code: toStringOrNull(row.project_code),
-            project_name: toStringOrNull(row.project_name),
-            order_code: toStringOrNull(row.order_code),
-            customer_code: toStringOrNull(row.customer_code),
-            customer_id: customerId,
-            customer_name: customerName,
-            sales_user_code: toStringOrNull(row.sales_user_code),
-            sales_user_id: salesUserId,
-            sales_user_name: salesUserName,
-            project_delivery_date: toStringOrNull(row.project_delivery_date),
-            order_id: toStringOrNull(row.order_id),
-            order_date: toStringOrNull(row.order_date),
-            order_amount_ex_tax: toNumberOrNull(row.order_amount_ex_tax),
-            order_amount_in_tax: toNumberOrNull(row.order_amount_in_tax),
-            order_delivery_date: toStringOrNull(row.order_delivery_date),
-            delivery_date: toStringOrNull(row.delivery_date),
-            order_amount_for_report: toNumberOrZero(row.order_amount_for_report),
-        };
-    });
+  const userNameById = new Map<string, string>();
 
-    // キーワード部分一致(受注番号・案件名・顧客コード・顧客名)
-    const keyword = filters.keyword?.trim().toLowerCase();
-    if (keyword) {
-        result = result.filter(row => {
-            const haystack = [
-                row.order_code,
-                row.project_name,
-                row.customer_code,
-                row.customer_name,
-            ].map(v => (v || '').toLowerCase());
-            return haystack.some(v => v.includes(keyword));
-        });
+  if (needUserIds.size > 0) {
+    const { data: userRows, error: userError } = await supabase
+      .from('users')
+      .select('id, name')
+      .in('id', Array.from(needUserIds));
+
+    if (userError) {
+      console.warn(
+        '[OrderLedger] Failed to fetch users:',
+        userError.message,
+      );
+    } else {
+      (userRows || []).forEach(user => {
+        if (user.id) {
+          userNameById.set(String(user.id), user.name || '');
+        }
+      });
     }
+  }
 
-    // 受注日降順
-    result.sort((a, b) => {
-        const da = parseOrderDateSafe(a.order_date)?.getTime() ?? 0;
-        const db = parseOrderDateSafe(b.order_date)?.getTime() ?? 0;
-        return db - da;
+  let result: OrderLedgerRow[] = rows.map(row => {
+    const customerId = toStringOrNull(row.customer_id);
+    const salesUserId = toStringOrNull(row.sales_user_id);
+
+    return {
+      project_uuid: row.project_uuid,
+      project_id: toStringOrNull(row.project_id),
+      project_code: toStringOrNull(row.project_code),
+      project_name: toStringOrNull(row.project_name),
+      order_code: toStringOrNull(row.order_code),
+      customer_code: toStringOrNull(row.customer_code),
+      customer_id: customerId,
+      customer_name:
+        toStringOrNull(row.customer_name) ??
+        (customerId
+          ? toStringOrNull(customerNameById.get(customerId))
+          : null),
+      sales_user_code: toStringOrNull(row.sales_user_code),
+      sales_user_id: salesUserId,
+      sales_user_name:
+        toStringOrNull(row.sales_user_name) ??
+        (salesUserId
+          ? toStringOrNull(userNameById.get(salesUserId))
+          : null),
+      project_delivery_date: toStringOrNull(row.project_delivery_date),
+      order_id: toStringOrNull(row.order_id),
+      order_date: toStringOrNull(row.order_date),
+      order_amount_ex_tax: toNumberOrNull(row.order_amount_ex_tax),
+      order_amount_in_tax: toNumberOrNull(row.order_amount_in_tax),
+      order_delivery_date: toStringOrNull(row.order_delivery_date),
+      delivery_date: toStringOrNull(row.delivery_date),
+      order_amount_for_report: toNumberOrZero(row.order_amount_for_report),
+    };
+  });
+
+  // キーワード部分一致
+  const keyword = String(filters.keyword || '').trim().toLowerCase();
+
+  if (keyword) {
+    result = result.filter(row => {
+      const searchable = [
+        row.order_code,
+        row.project_name,
+        row.customer_code,
+        row.customer_name,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return searchable.includes(keyword);
     });
+  }
 
-    return result;
+  // 受注日降順
+  result.sort((a, b) =>
+    String(b.order_date || '').localeCompare(String(a.order_date || '')),
+  );
+
+  console.log('[OrderLedger] final result', {
+    monthPrefix,
+    salesUserId: filters.salesUserId ?? null,
+    keyword: keyword || null,
+    count: result.length,
+  });
+
+  return result;
 };
 
 export const getMonthlyOrderDashboard = async (month: string): Promise<MonthlyOrderDashboardRow> => {
