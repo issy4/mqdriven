@@ -444,13 +444,14 @@ const OrderLedgerManagementPage: React.FC<OrderLedgerManagementPageProps> = ({ c
         {activeTab === 'ledger' && (
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-100">
-              <span className="text-sm text-slate-600">
-                {ledger.length.toLocaleString('ja-JP')} 件
-              </span>
-              <span className="text-sm font-semibold text-slate-700">
-                税抜合計：{formatJPY(ledgerTotal)}
-              </span>
-            </div>
+  <span className="text-sm text-slate-600">
+    全 {ledger.length.toLocaleString('ja-JP')} 件中
+    {Math.min(ledgerVisible, ledger.length).toLocaleString('ja-JP')} 件を表示
+  </span>
+  <span className="text-sm font-semibold text-slate-700">
+    税抜合計：{formatJPY(ledgerTotal)}
+  </span>
+</div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
