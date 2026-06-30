@@ -1587,3 +1587,14 @@ export interface SalesTargetUser {
   department_id?: string | null;
   is_active: boolean;
 }
+
+export interface SalesAnnualTarget {
+  id: string;
+  fiscal_year: number;
+  user_id: string;
+  annual_target_amount: number;
+  note: string | null;
+  created_by: string | null;
+  created_at?: string;
+  updated_at?: string;
+}

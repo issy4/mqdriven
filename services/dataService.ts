@@ -65,6 +65,7 @@ import {
     MonthlyOrderUserDashboardRow,
     MonthlyOrderCustomerRankingRow,
     SalesTargetUser,
+    SalesAnnualTarget,
 } from '../types';
 import type { CalendarEvent } from '../types';
 
@@ -6816,4 +6817,57 @@ export const saveSalesTarget = async (input: SaveSalesTargetInput): Promise<Mont
         gap_amount: toNumberOrNull(data.gap_amount),
         achievement_rate: toNumberOrNull(data.achievement_rate),
     };
+};
+
+export const getSalesAnnualTargets = async (
+  fiscalYear: number,
+): Promise<SalesAnnualTarget[]> => {
+  const supabase = getSupabase();
+
+  const { data, error } = await supabase
+    .from('sales_annual_targets')
+    .select('*')
+    .eq('fiscal_year', fiscalYear)
+    .order('created_at', { ascending: true });
+
+  ensureSupabaseSuccess(error, 'Failed to fetch sales annual targets');
+
+  return (data || []).map(row => ({
+    id: String(row.id),
+    fiscal_year: Number(row.fiscal_year),
+    user_id: String(row.user_id),
+    annual_target_amount: toNumberOrZero(row.annual_target_amount),
+    note: toStringOrNull(row.note),
+    created_by: toStringOrNull(row.created_by),
+    created_at: toStringOrNull(row.created_at) ?? undefined,
+    updated_at: toStringOrNull(row.updated_at) ?? undefined,
+  }));
+};
+
+export const saveSalesAnnualTarget = async (params: {
+  fiscalYear: number;
+  userId: string;
+  annualTargetAmount: number;
+  note?: string | null;
+  createdBy?: string | null;
+}): Promise<void> => {
+  const supabase = getSupabase();
+
+  const { error } = await supabase
+    .from('sales_annual_targets')
+    .upsert(
+      {
+        fiscal_year: params.fiscalYear,
+        user_id: params.userId,
+        annual_target_amount: params.annualTargetAmount,
+        note: params.note ?? null,
+        created_by: params.createdBy ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: 'fiscal_year,user_id',
+      },
+    );
+
+  ensureSupabaseSuccess(error, 'Failed to save sales annual target');
 };
