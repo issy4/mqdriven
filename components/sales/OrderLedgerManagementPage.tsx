@@ -186,7 +186,7 @@ const OrderLedgerManagementPage: React.FC<OrderLedgerManagementPageProps> = ({ c
       const count = row?.order_count ?? 0;
       const target = row?.target_amount ?? null;
       const rate = target && target > 0 ? (actual / target) * 100 : null;
-      const gap = target !== null ? target - actual : null;
+      const gap = target !== null ? actual - target : null;
       return { actual, count, target, rate, gap };
     }
     const actual = dashboard?.actual_amount ?? 0;
@@ -194,7 +194,7 @@ const OrderLedgerManagementPage: React.FC<OrderLedgerManagementPageProps> = ({ c
     const targetSum = byUser.reduce((sum, u) => sum + (u.target_amount ?? 0), 0);
     const target = targetSum > 0 ? targetSum : null;
     const rate = target && target > 0 ? (actual / target) * 100 : null;
-    const gap = target !== null ? target - actual : null;
+    const gap = target !== null ? actual - target : null;
     return { actual, count, target, rate, gap };
   }, [selectedSalesId, byUser, dashboard]);
 
@@ -386,16 +386,24 @@ const OrderLedgerManagementPage: React.FC<OrderLedgerManagementPageProps> = ({ c
           icon={Target}
           accent="bg-amber-50 text-amber-700"
           footer={
-            kpi.target !== null && kpi.gap !== null ? (
-              kpi.gap > 0 ? (
-                <span className="text-rose-600 font-medium">不足 {formatJPY(kpi.gap)}</span>
-              ) : (
-                <span className="text-emerald-600 font-medium">超過 {formatJPY(Math.abs(kpi.gap))}</span>
-              )
-            ) : (
-              <span className="text-slate-400">差額 —</span>
-            )
-          }
+  kpi.target !== null && kpi.gap !== null ? (
+    kpi.gap > 0 ? (
+      <span className="text-emerald-600 font-medium">
+        超過 +{formatJPY(kpi.gap)}
+      </span>
+    ) : kpi.gap < 0 ? (
+      <span className="text-rose-600 font-medium">
+        不足 -{formatJPY(Math.abs(kpi.gap))}
+      </span>
+    ) : (
+      <span className="text-slate-600 font-medium">
+        目標達成 ¥0
+      </span>
+    )
+  ) : (
+    <span className="text-slate-400">差額 —</span>
+  )
+}
         />
         <KpiCard
           label="達成率"
@@ -623,7 +631,7 @@ const OrderLedgerManagementPage: React.FC<OrderLedgerManagementPageProps> = ({ c
                   {byUser.map(row => {
                     const target = row.target_amount ?? null;
                     const rate = target && target > 0 ? (row.actual_amount / target) * 100 : null;
-                    const gap = target !== null ? target - row.actual_amount : null;
+                    const gap = target !== null ? row.actual_amount - target : null;
                     const isEditing = editingUserId === row.user_id;
                     return (
                       <tr key={row.user_id} className="border-t border-slate-100 hover:bg-slate-50 align-top">
@@ -645,12 +653,20 @@ const OrderLedgerManagementPage: React.FC<OrderLedgerManagementPageProps> = ({ c
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-right tabular-nums">
                           {gap === null ? (
-                            <span className="text-slate-400">—</span>
-                          ) : gap > 0 ? (
-                            <span className="text-rose-600">{formatJPY(gap)}</span>
-                          ) : (
-                            <span className="text-emerald-600">{formatJPY(gap)}</span>
-                          )}
+  <span className="text-slate-400">—</span>
+) : gap > 0 ? (
+  <span className="text-emerald-600 font-medium">
+    +{formatJPY(gap)}
+  </span>
+) : gap < 0 ? (
+  <span className="text-rose-600 font-medium">
+    -{formatJPY(Math.abs(gap))}
+  </span>
+) : (
+  <span className="text-slate-600 font-medium">
+    ¥0
+  </span>
+)}
                         </td>
                         <td className={`px-3 py-2 whitespace-nowrap text-right tabular-nums font-medium ${achievementColorClass(rate)}`}>
                           {rate !== null ? `${rate.toFixed(1)}%` : '—'}
