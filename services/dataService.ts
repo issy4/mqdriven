@@ -6457,73 +6457,38 @@ export const getOrderLedger = async (
   const supabase = getSupabase();
 
   const monthPrefix = String(filters.month || '').slice(0, 7);
+
   if (!/^\d{4}-\d{2}$/.test(monthPrefix)) {
     throw new Error(`Invalid target month: ${filters.month}`);
   }
 
-  // PostgREST の取得上限に左右されないよう、全件をページング取得
-  const pageSize = 1000;
-  const rawRows: any[] = [];
-  let from = 0;
+  let query = supabase
+    .from('vw_order_ledger')
+    .select('*')
+    .like('order_date', `${monthPrefix}%`)
+    .order('order_date', { ascending: false });
 
-  while (true) {
-    const { data, error } = await supabase
-      .from('vw_order_ledger')
-      .select('*')
-      .range(from, from + pageSize - 1);
-
-    ensureSupabaseSuccess(error, 'Failed to fetch order ledger');
-
-    const batch = data || [];
-    rawRows.push(...batch);
-
-    if (batch.length < pageSize) {
-      break;
-    }
-
-    from += pageSize;
-  }
-
-  console.log('[OrderLedger] raw ledger rows', {
-    total: rawRows.length,
-    monthPrefix,
-  });
-
-  // order_date は text 型なので、日付変換ではなく YYYY-MM の先頭一致で絞る
-  let rows = rawRows.filter(row => {
-    const orderDate = String(row.order_date || '')
-      .trim()
-      .replace(/\//g, '-');
-
-    return orderDate.startsWith(monthPrefix);
-  });
-
-  console.log('[OrderLedger] month-filtered rows', {
-    monthPrefix,
-    count: rows.length,
-  });
-
-  // 営業担当で絞り込み
   if (filters.salesUserId) {
-    rows = rows.filter(
-      row => toStringOrNull(row.sales_user_id) === filters.salesUserId,
-    );
+    query = query.eq('sales_user_id', filters.salesUserId);
   }
 
-  // 顧客名・営業担当名の補完対象を収集
+  const { data, error } = await query;
+
+  ensureSupabaseSuccess(error, 'Failed to fetch order ledger');
+
+  let rows: any[] = data || [];
+
+  // 顧客名・営業担当名の補完
   const needCustomerIds = new Set<string>();
   const needUserIds = new Set<string>();
 
   rows.forEach(row => {
-    const customerId = toStringOrNull(row.customer_id);
-    const salesUserId = toStringOrNull(row.sales_user_id);
-
-    if (!toStringOrNull(row.customer_name) && customerId) {
-      needCustomerIds.add(customerId);
+    if (!toStringOrNull(row.customer_name) && toStringOrNull(row.customer_id)) {
+      needCustomerIds.add(String(row.customer_id));
     }
 
-    if (!toStringOrNull(row.sales_user_name) && salesUserId) {
-      needUserIds.add(salesUserId);
+    if (!toStringOrNull(row.sales_user_name) && toStringOrNull(row.sales_user_id)) {
+      needUserIds.add(String(row.sales_user_id));
     }
   });
 
@@ -6536,18 +6501,10 @@ export const getOrderLedger = async (
       .in('id', Array.from(needCustomerIds));
 
     if (customerError) {
-      console.warn(
-        '[OrderLedger] Failed to fetch customers:',
-        customerError.message,
-      );
+      console.warn('Failed to fetch customers for order ledger:', customerError.message);
     } else {
-      (customerRows || []).forEach(customer => {
-        if (customer.id) {
-          customerNameById.set(
-            String(customer.id),
-            customer.customer_name || '',
-          );
-        }
+      (customerRows || []).forEach(c => {
+        if (c.id) customerNameById.set(String(c.id), c.customer_name || '');
       });
     }
   }
@@ -6561,15 +6518,10 @@ export const getOrderLedger = async (
       .in('id', Array.from(needUserIds));
 
     if (userError) {
-      console.warn(
-        '[OrderLedger] Failed to fetch users:',
-        userError.message,
-      );
+      console.warn('Failed to fetch users for order ledger:', userError.message);
     } else {
-      (userRows || []).forEach(user => {
-        if (user.id) {
-          userNameById.set(String(user.id), user.name || '');
-        }
+      (userRows || []).forEach(u => {
+        if (u.id) userNameById.set(String(u.id), (u as any).name || '');
       });
     }
   }
@@ -6577,6 +6529,14 @@ export const getOrderLedger = async (
   let result: OrderLedgerRow[] = rows.map(row => {
     const customerId = toStringOrNull(row.customer_id);
     const salesUserId = toStringOrNull(row.sales_user_id);
+
+    const customerName =
+      toStringOrNull(row.customer_name) ??
+      (customerId ? toStringOrNull(customerNameById.get(customerId)) : null);
+
+    const salesUserName =
+      toStringOrNull(row.sales_user_name) ??
+      (salesUserId ? toStringOrNull(userNameById.get(salesUserId)) : null);
 
     return {
       project_uuid: row.project_uuid,
@@ -6586,18 +6546,10 @@ export const getOrderLedger = async (
       order_code: toStringOrNull(row.order_code),
       customer_code: toStringOrNull(row.customer_code),
       customer_id: customerId,
-      customer_name:
-        toStringOrNull(row.customer_name) ??
-        (customerId
-          ? toStringOrNull(customerNameById.get(customerId))
-          : null),
+      customer_name: customerName,
       sales_user_code: toStringOrNull(row.sales_user_code),
       sales_user_id: salesUserId,
-      sales_user_name:
-        toStringOrNull(row.sales_user_name) ??
-        (salesUserId
-          ? toStringOrNull(userNameById.get(salesUserId))
-          : null),
+      sales_user_name: salesUserName,
       project_delivery_date: toStringOrNull(row.project_delivery_date),
       order_id: toStringOrNull(row.order_id),
       order_date: toStringOrNull(row.order_date),
@@ -6610,35 +6562,24 @@ export const getOrderLedger = async (
   });
 
   // キーワード部分一致
-  const keyword = String(filters.keyword || '').trim().toLowerCase();
+  const keyword = filters.keyword?.trim().toLowerCase();
 
   if (keyword) {
     result = result.filter(row => {
-      const searchable = [
+      const haystack = [
         row.order_code,
         row.project_name,
         row.customer_code,
         row.customer_name,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
+      ].map(v => (v || '').toLowerCase());
 
-      return searchable.includes(keyword);
+      return haystack.some(v => v.includes(keyword));
     });
   }
 
-  // 受注日降順
   result.sort((a, b) =>
     String(b.order_date || '').localeCompare(String(a.order_date || '')),
   );
-
-  console.log('[OrderLedger] final result', {
-    monthPrefix,
-    salesUserId: filters.salesUserId ?? null,
-    keyword: keyword || null,
-    count: result.length,
-  });
 
   return result;
 };
