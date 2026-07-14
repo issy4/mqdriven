@@ -234,7 +234,7 @@ const SupplierSearchSelect: React.FC<SupplierSearchSelectProps> = ({
                 </button>
             )}
 
-            {onCreateSupplier && (
+            {onCreateSupplier && !selectedSupplier && (
                 <button
                     type="button"
                     onClick={handleCreateSupplier}
