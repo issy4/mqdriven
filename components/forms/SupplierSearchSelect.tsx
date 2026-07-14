@@ -41,6 +41,7 @@ const SupplierSearchSelect: React.FC<SupplierSearchSelectProps> = ({
     const [debouncedQuery, setDebouncedQuery] = useState('');
     const [limit, setLimit] = useState(DEFAULT_LIMIT);
     const [isCreating, setIsCreating] = useState(false);
+    const [createdSuppliers, setCreatedSuppliers] = useState<PaymentRecipient[]>([]);
 
     useEffect(() => {
         const timer = setTimeout(() => setDebouncedQuery(query), 200);
@@ -51,9 +52,27 @@ const SupplierSearchSelect: React.FC<SupplierSearchSelectProps> = ({
         setLimit(DEFAULT_LIMIT);
     }, [debouncedQuery]);
 
+    const allSuppliers = useMemo(() => {
+        const map = new Map<string, PaymentRecipient>();
+
+        suppliers.forEach(supplier => {
+            if (supplier.id) {
+                map.set(supplier.id, supplier);
+            }
+        });
+
+        createdSuppliers.forEach(supplier => {
+            if (supplier.id) {
+                map.set(supplier.id, supplier);
+            }
+        });
+
+        return Array.from(map.values());
+    }, [suppliers, createdSuppliers]);
+
     const selectedSupplier = useMemo(
-        () => suppliers.find(supplier => supplier.id === value) ?? null,
-        [suppliers, value]
+        () => allSuppliers.find(supplier => supplier.id === value) ?? null,
+        [allSuppliers, value]
     );
 
     useEffect(() => {
@@ -66,33 +85,44 @@ const SupplierSearchSelect: React.FC<SupplierSearchSelectProps> = ({
 
     const normalizedQuery = normalizeSearchText(debouncedQuery);
 
-    const { visibleSuppliers, hasMore } = useMemo(() => {
+    const { visibleSuppliers, hasMore, totalMatched } = useMemo(() => {
         if (!normalizedQuery) {
             return {
-                visibleSuppliers: suppliers.slice(0, limit),
-                hasMore: suppliers.length > limit,
+                visibleSuppliers: allSuppliers.slice(0, limit),
+                hasMore: allSuppliers.length > limit,
+                totalMatched: allSuppliers.length,
             };
         }
+
         const prefix: PaymentRecipient[] = [];
         const partial: PaymentRecipient[] = [];
-        suppliers.forEach(supplier => {
+
+        allSuppliers.forEach(supplier => {
             const target = normalizeSearchText(
-                [supplier.companyName, supplier.recipientName, supplier.recipientCode]
+                [
+                    supplier.companyName,
+                    supplier.recipientName,
+                    supplier.recipientCode,
+                ]
                     .filter(Boolean)
                     .join(' ')
             );
+
             if (target.startsWith(normalizedQuery)) {
                 prefix.push(supplier);
             } else if (target.includes(normalizedQuery)) {
                 partial.push(supplier);
             }
         });
+
         const combined = [...prefix, ...partial];
+
         return {
             visibleSuppliers: combined.slice(0, limit),
             hasMore: combined.length > limit,
+            totalMatched: combined.length,
         };
-    }, [suppliers, normalizedQuery, limit]);
+    }, [allSuppliers, normalizedQuery, limit]);
 
     const selectClass = [
         'w-full text-sm bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white rounded-md p-2 focus:ring-blue-500 focus:border-blue-500',
@@ -102,6 +132,7 @@ const SupplierSearchSelect: React.FC<SupplierSearchSelectProps> = ({
     ]
         .filter(Boolean)
         .join(' ');
+
     const inputClass = [
         'w-full text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white rounded-md p-2 focus:ring-blue-500 focus:border-blue-500',
         highlightRequired
@@ -112,12 +143,26 @@ const SupplierSearchSelect: React.FC<SupplierSearchSelectProps> = ({
         .join(' ');
 
     const handleCreateSupplier = async () => {
-        if (!onCreateSupplier || !query.trim()) return;
+        const nameToCreate = query.trim();
+
+        if (!onCreateSupplier || !nameToCreate) return;
+
         setIsCreating(true);
+
         try {
-            const created = await onCreateSupplier(query.trim());
+            const created = await onCreateSupplier(nameToCreate);
+
+            setCreatedSuppliers(prev => {
+                const exists = prev.some(supplier => supplier.id === created.id);
+                return exists ? prev : [created, ...prev];
+            });
+
             setQuery(formatSupplierLabel(created));
+            setDebouncedQuery(formatSupplierLabel(created));
             onChange(created.id, created);
+        } catch (error) {
+            console.error('[SupplierSearchSelect] Failed to create supplier:', error);
+            alert('支払先の登録に失敗しました。');
         } finally {
             setIsCreating(false);
         }
@@ -131,40 +176,64 @@ const SupplierSearchSelect: React.FC<SupplierSearchSelectProps> = ({
                 onChange={event => setQuery(event.target.value)}
                 className={inputClass}
                 placeholder={placeholder}
-                disabled={disabled}
+                disabled={disabled || isCreating}
                 autoComplete="off"
             />
+
             <select
                 id={id}
                 name={name}
                 value={value ?? ''}
                 required={required}
                 onChange={event => {
-                    const supplier = suppliers.find(s => s.id === event.target.value) ?? null;
+                    const supplier =
+                        allSuppliers.find(s => s.id === event.target.value) ?? null;
+
                     onChange(event.target.value, supplier);
                 }}
-                disabled={disabled}
+                disabled={disabled || isCreating}
                 className={selectClass}
             >
                 <option value="">支払先を選択</option>
+
+                {selectedSupplier &&
+                    !visibleSuppliers.some(supplier => supplier.id === selectedSupplier.id) && (
+                        <option value={selectedSupplier.id}>
+                            {formatSupplierLabel(selectedSupplier)}
+                        </option>
+                    )}
+
                 {visibleSuppliers.map(supplier => (
                     <option key={supplier.id} value={supplier.id}>
                         {formatSupplierLabel(supplier)}
                     </option>
                 ))}
             </select>
-            {!disabled && !selectedSupplier && visibleSuppliers.length === 0 && (
-                <p className="text-xs text-slate-500 dark:text-slate-400">候補が見つかりません。</p>
+
+            {!disabled && !selectedSupplier && normalizedQuery && visibleSuppliers.length === 0 && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                    候補が見つかりません。
+                </p>
             )}
+
+            {!disabled && normalizedQuery && totalMatched > 0 && (
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                    {totalMatched.toLocaleString('ja-JP')} 件中
+                    {visibleSuppliers.length.toLocaleString('ja-JP')} 件を表示
+                </p>
+            )}
+
             {hasMore && (
                 <button
                     type="button"
                     onClick={() => setLimit(prev => prev + DEFAULT_LIMIT)}
                     className="text-xs text-blue-600 hover:text-blue-700"
+                    disabled={disabled || isCreating}
                 >
                     さらに表示
                 </button>
             )}
+
             {onCreateSupplier && (
                 <button
                     type="button"
