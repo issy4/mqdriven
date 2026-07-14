@@ -168,17 +168,35 @@ const SupplierSearchSelect: React.FC<SupplierSearchSelectProps> = ({
         }
     };
 
+    const canCreateSupplier =
+  Boolean(onCreateSupplier) &&
+  !disabled &&
+  !isCreating &&
+  query.trim().length > 0 &&
+  !selectedSupplier;
+
     return (
         <div className="space-y-1">
             <input
-                type="text"
-                value={query}
-                onChange={event => setQuery(event.target.value)}
-                className={inputClass}
-                placeholder={placeholder}
-                disabled={disabled || isCreating}
-                autoComplete="off"
-            />
+  type="text"
+  value={query}
+  onChange={event => {
+    const nextQuery = event.target.value;
+    setQuery(nextQuery);
+
+    if (selectedSupplier) {
+      const selectedLabel = formatSupplierLabel(selectedSupplier);
+
+      if (normalizeSearchText(nextQuery) !== normalizeSearchText(selectedLabel)) {
+        onChange('', null);
+      }
+    }
+  }}
+  className={inputClass}
+  placeholder={placeholder}
+  disabled={disabled || isCreating}
+  autoComplete="off"
+/>
 
             <select
                 id={id}
@@ -234,16 +252,15 @@ const SupplierSearchSelect: React.FC<SupplierSearchSelectProps> = ({
                 </button>
             )}
 
-            {onCreateSupplier && !selectedSupplier && (
-                <button
-                    type="button"
-                    onClick={handleCreateSupplier}
-                    disabled={disabled || isCreating || !query.trim()}
-                    className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
-                >
-                    {isCreating ? '登録中...' : 'この名前で支払先を登録'}
-                </button>
-            )}
+            {canCreateSupplier && (
+  <button
+    type="button"
+    onClick={handleCreateSupplier}
+    className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+  >
+    この名前で支払先を登録
+  </button>
+)}
         </div>
     );
 };
