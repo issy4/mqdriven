@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Page, EmployeeUser } from '../types';
-import { Calendar, ClipboardList, Settings, Briefcase, DollarSign, Inbox, PieChart, BookOpen, CheckCircle, ChevronLeft, ChevronRight, ChevronDown, Mail, X, Upload, Calculator } from './Icons';
+import { Calendar, ClipboardList, Settings, Briefcase, DollarSign, Inbox, PieChart, BookOpen, CheckCircle, ChevronLeft, ChevronRight, ChevronDown, Mail, X, Upload, Calculator, } from './Icons';
 
 interface SidebarProps {
   currentPage: Page;
@@ -45,6 +45,19 @@ const BASE_NAV_CATEGORIES: NavCategoryType[] = [
       { page: 'legacy_billing', name: '請求管理' },
     ],
   },
+  {
+  id: 'manufacturing',
+  name: '製造',
+  icon: Briefcase,
+  items: [
+    {
+      page: 'manufacturing_orders',
+      name: '印刷スケジュール',
+      icon: Calendar,
+      externalUrl: 'https://ps.b-p.co.jp',
+    },
+  ],
+},
   {
     id: 'calendar',
     name: 'カレンダー',
