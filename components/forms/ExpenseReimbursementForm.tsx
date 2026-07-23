@@ -249,11 +249,57 @@ const computeLineTotals = (invoice: ExpenseInvoiceDraft): ComputedTotals => {
     const isTaxInclusive = invoice.isTaxInclusive ?? false;
 
     if (lineSum === 0 && hasHeaderTotals) {
-        const net = totalNet > 0 ? totalNet : Math.max(0, totalGross - totalTax);
-        const tax = totalTax > 0 ? totalTax : Math.max(0, totalGross - net);
-        const gross = totalGross > 0 ? totalGross : net + tax;
-        return { net, tax, gross };
+    // 税込合計だけ入力された場合は、税込金額から税抜・消費税を逆算する
+    if (totalGross > 0 && totalNet === 0 && totalTax === 0) {
+        const defaultTaxRate = 10;
+        const net = Math.round(totalGross / (1 + defaultTaxRate / 100));
+        const tax = totalGross - net;
+
+        return {
+            net,
+            tax,
+            gross: totalGross,
+        };
     }
+
+    // 税込合計と消費税がある場合
+    if (totalGross > 0 && totalTax > 0 && totalNet === 0) {
+        const net = Math.max(0, totalGross - totalTax);
+
+        return {
+            net,
+            tax: totalTax,
+            gross: totalGross,
+        };
+    }
+
+    // 税抜合計と消費税がある場合
+    if (totalNet > 0 && totalTax > 0 && totalGross === 0) {
+        return {
+            net: totalNet,
+            tax: totalTax,
+            gross: totalNet + totalTax,
+        };
+    }
+
+    // 税抜合計だけある場合
+    if (totalNet > 0 && totalTax === 0 && totalGross === 0) {
+        const defaultTaxRate = 10;
+        const tax = Math.round(totalNet * (defaultTaxRate / 100));
+
+        return {
+            net: totalNet,
+            tax,
+            gross: totalNet + tax,
+        };
+    }
+
+    const net = totalNet > 0 ? totalNet : Math.max(0, totalGross - totalTax);
+    const tax = totalTax > 0 ? totalTax : Math.max(0, totalGross - net);
+    const gross = totalGross > 0 ? totalGross : net + tax;
+
+    return { net, tax, gross };
+}
 
     // Use user's tax selection if explicitly set, otherwise fall back to auto-detection
     const shouldTreatAsInclusive = isTaxInclusive || (hasHeaderTotals && totalGross > 0 && isCloseTo(lineSum, totalGross) && !isCloseTo(lineSum, totalNet));
