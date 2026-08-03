@@ -20,6 +20,11 @@ const getCurrentMonth = () => {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 };
 
+const getPreviousYearMonth = (month: string) => {
+  const [year, monthNum] = month.split('-').map(Number);
+  return `${year - 1}-${String(monthNum).padStart(2, '0')}`;
+};
+
 const getMonthStartDate = (month: string) => {
   return new Date(`${month}-01T00:00:00`);
 };
@@ -127,6 +132,8 @@ const KpiCard: React.FC<{
 const SalesPersonalDashboardPage: React.FC<Props> = ({ currentUser }) => {
   const [month, setMonth] = useState(getCurrentMonth());
   const [dashboard, setDashboard] = useState<MonthlyOrderUserDashboardRow | null>(null);
+  const [previousYearDashboard, setPreviousYearDashboard] =
+  useState<MonthlyOrderUserDashboardRow | null>(null);
   const [followups, setFollowups] = useState<SalesPersonalFollowupCandidate[]>([]);
   const [orders, setOrders] = useState<OrderLedgerRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -139,20 +146,27 @@ const SalesPersonalDashboardPage: React.FC<Props> = ({ currentUser }) => {
     setError('');
 
     try {
-      const [byUserRows, followupRows, orderRows] = await Promise.all([
-        getMonthlyOrderDashboardByUser(month),
-        getSalesPersonalFollowupCandidates(currentUser.id, month),
-        getOrderLedger({
-          month,
-          salesUserId: currentUser.id,
-          keyword: '',
-        }),
-      ]);
+      const previousYearMonth = getPreviousYearMonth(month);
+
+const [byUserRows, previousYearRows, followupRows, orderRows] = await Promise.all([
+  getMonthlyOrderDashboardByUser(month),
+  getMonthlyOrderDashboardByUser(previousYearMonth),
+  getSalesPersonalFollowupCandidates(currentUser.id, month),
+  getOrderLedger({
+    month,
+    salesUserId: currentUser.id,
+    keyword: '',
+  }),
+]);
 
       const selfDashboard =
-        byUserRows.find(row => row.user_id === currentUser.id) ?? null;
+  byUserRows.find(row => row.user_id === currentUser.id) ?? null;
 
-      setDashboard(selfDashboard);
+const selfPreviousYearDashboard =
+  previousYearRows.find(row => row.user_id === currentUser.id) ?? null;
+
+setDashboard(selfDashboard);
+setPreviousYearDashboard(selfPreviousYearDashboard);
       setFollowups(
         followupRows
           .filter(row => row.followup_reason !== '通常')
@@ -176,6 +190,14 @@ const SalesPersonalDashboardPage: React.FC<Props> = ({ currentUser }) => {
   const actualAmount = Number(dashboard?.actual_amount || 0);
   const targetAmount = Number(dashboard?.target_amount || 0);
   const orderCount = Number(dashboard?.order_count || 0);
+
+  const previousYearAmount = Number(previousYearDashboard?.actual_amount || 0);
+const yearOverYearGap = actualAmount - previousYearAmount;
+
+const yearOverYearRate =
+  previousYearAmount > 0
+    ? Math.round((yearOverYearGap / previousYearAmount) * 1000) / 10
+    : null;
 
   const elapsedDays = getElapsedDaysInMonth(month);
   const daysInMonth = getDaysInMonth(month);
@@ -253,7 +275,7 @@ const SalesPersonalDashboardPage: React.FC<Props> = ({ currentUser }) => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         <KpiCard
           label="現在受注額"
           value={formatCurrency(actualAmount)}
@@ -261,6 +283,27 @@ const SalesPersonalDashboardPage: React.FC<Props> = ({ currentUser }) => {
           icon={<TrendingUp className="h-5 w-5" />}
           tone={achievementRate !== null && achievementRate >= 100 ? 'good' : 'normal'}
         />
+        <KpiCard
+  label="前年同月比"
+  value={
+    previousYearAmount > 0
+      ? `${yearOverYearGap >= 0 ? '+' : '-'}${formatCurrency(Math.abs(yearOverYearGap))}`
+      : '前年実績なし'
+  }
+  sub={
+    previousYearAmount > 0
+      ? `前年 ${formatCurrency(previousYearAmount)} / ${yearOverYearRate}%`
+      : `${getPreviousYearMonth(month)} の実績がありません`
+  }
+  icon={<TrendingUp className="h-5 w-5" />}
+  tone={
+    previousYearAmount === 0
+      ? 'normal'
+      : yearOverYearGap >= 0
+        ? 'good'
+        : 'danger'
+  }
+/>
         <KpiCard
           label="月末着地予測"
           value={formatCurrency(forecastAmount)}
