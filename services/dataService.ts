@@ -2027,59 +2027,30 @@ export const addJournalEntry = async (entryData: Omit<JournalEntry, 'id' | 'date
 };
 
 const fetchUsersDirectly = async (supabase: SupabaseClient): Promise<EmployeeUser[]> => {
-    // Try sequential queries instead of parallel to avoid network congestion
-    console.log('[dataService] Fetching users data...');
-
-    let userRows, departmentRows, titleRows;
-    let userError, departmentError, titleError;
+    let userRows: any[] = [];
+    let departmentRows: any[] = [];
 
     try {
-        // First fetch users
-        console.log('[dataService] Fetching users...');
-        const userSelectColumns = 'id, name, name_kana, email, role, created_at, department_id, position_id, is_active, notification_enabled is_sales_user';
-        const result = await supabase
+        const { data: usersData, error: usersError } = await supabase
             .from('users')
-            .select(userSelectColumns)
+            .select('id, name, name_kana, email, role, created_at, department_id, position_id, is_active, notification_enabled, is_sales_user')
             .order('name', { ascending: true });
-        userRows = result.data;
-        userError = result.error;
-        if (userError && isMissingColumnError(userError)) {
-            const fallbackResult = await supabase
-                .from('users')
-                .select('id, name, email, role, created_at, department_id, position_id, is_active, notification_enabled is_sales_user')
-                .order('name', { ascending: true });
-            userRows = fallbackResult.data;
-            userError = fallbackResult.error;
+
+        if (usersError) {
+            throw usersError;
         }
 
-        if (userError) {
-            console.error('[dataService] Users query failed:', userError);
-            throw formatSupabaseError('Failed to fetch users', userError);
-        }
-        console.log(`[dataService] Successfully fetched ${userRows?.length || 0} users`);
+        userRows = usersData || [];
 
-        // Then fetch departments
-        console.log('[dataService] Fetching departments...');
-        const deptResult = await supabase.from('departments').select('id, name');
-        departmentRows = deptResult.data;
-        departmentError = deptResult.error;
+        const { data: departmentsData, error: departmentsError } = await supabase
+            .from('departments')
+            .select('id, name');
 
-        if (departmentError) {
-            console.warn('[dataService] Failed to fetch departments for user mapping:', departmentError.message);
+        if (departmentsError) {
+            console.warn('[dataService] Failed to fetch departments:', departmentsError.message);
+            departmentRows = [];
         } else {
-            console.log(`[dataService] Successfully fetched ${departmentRows?.length || 0} departments`);
-        }
-
-        // Finally fetch titles
-        console.log('[dataService] Fetching employee titles...');
-        const titleResult = await supabase.from('employee_titles').select('id, name');
-        titleRows = titleResult.data;
-        titleError = titleResult.error;
-
-        if (titleError) {
-            console.warn('[dataService] Failed to fetch titles for user mapping:', titleError.message);
-        } else {
-            console.log(`[dataService] Successfully fetched ${titleRows?.length || 0} titles`);
+            departmentRows = departmentsData || [];
         }
 
     } catch (error) {
@@ -2088,38 +2059,29 @@ const fetchUsersDirectly = async (supabase: SupabaseClient): Promise<EmployeeUse
     }
 
     const departmentMap = new Map<string, string>();
+
     (departmentRows || []).forEach((dept: any) => {
         if (dept?.id) {
             departmentMap.set(dept.id, dept.name || '');
         }
     });
 
-    const titleMap = new Map<string, string>();
-    (titleRows || []).forEach((title: any) => {
-        if (title?.id) {
-            titleMap.set(title.id, title.name || '');
-        }
-    });
-
     return (userRows || []).map((user: any) => {
         const role: 'admin' | 'user' = user.role === 'admin' ? 'admin' : 'user';
         const departmentName = user.department_id ? departmentMap.get(user.department_id) || null : null;
-        const titleName = user.position_id ? titleMap.get(user.position_id) || null : null;
 
         return {
             id: user.id,
             name: user.name || '未設定',
             nameKana: user.name_kana ?? null,
             department: departmentName,
-            title: titleName,
+            title: null,
             email: user.email || '',
             role,
             createdAt: user.created_at,
             isActive: user.is_active === null || user.is_active === undefined ? true : Boolean(user.is_active),
             notificationEnabled: user.notification_enabled === null || user.notification_enabled === undefined ? true : Boolean(user.notification_enabled),
-
-            // 追加
-            is_sales_user: user.is_sales_user === true,            
+            is_sales_user: user.is_sales_user === true,
         };
     });
 };
@@ -3789,9 +3751,18 @@ export const deleteDepartment = async (id: string): Promise<void> => {
 
 export const getTitles = async (): Promise<Title[]> => {
     const supabase = getSupabase();
-    const { data, error } = await supabase.from('employee_titles').select('*').order('name');
-    ensureSupabaseSuccess(error, '蠖ｹ閨ｷ縺ｮ蜿門ｾ励↓螟ｱ謨励＠縺ｾ縺励◆');
-    return (data || []).map(d => ({ ...d, createdAt: d.created_at, isActive: d.is_active }));
+
+    const { data, error } = await supabase
+        .from('titles')
+        .select('*')
+        .order('name', { ascending: true });
+
+    if (error) {
+        console.warn('[getTitles] titles table unavailable:', error.message);
+        return [];
+    }
+
+    return data || [];
 };
 
 export const saveTitle = async (item: Partial<Title>): Promise<void> => {
