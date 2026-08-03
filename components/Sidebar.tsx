@@ -35,6 +35,7 @@ const BASE_NAV_CATEGORIES: NavCategoryType[] = [
     name: '営業',
     icon: Briefcase,
     items: [
+      { page: 'sales_personal_dashboard', name: 'マイ営業ダッシュボード', icon: PieChart, },
       { page: 'business_forms_hub', name: '業務プロセス管理', icon: ClipboardList },
       { page: 'sales_leads', name: 'リード管理' },
       { page: 'sales_customers', name: '取引先Master' },
