@@ -24,6 +24,25 @@ const getMonthStartDate = (month: string) => {
   return new Date(`${month}-01T00:00:00`);
 };
 
+const isCurrentMonth = (month: string) => {
+  const now = new Date();
+  const target = getMonthStartDate(month);
+
+  return now.getFullYear() === target.getFullYear()
+    && now.getMonth() === target.getMonth();
+};
+
+const isPastMonth = (month: string) => {
+  const now = new Date();
+  const target = getMonthStartDate(month);
+
+  return target.getFullYear() < now.getFullYear()
+    || (
+      target.getFullYear() === now.getFullYear()
+      && target.getMonth() < now.getMonth()
+    );
+};
+
 const getDaysInMonth = (month: string) => {
   const [year, monthNum] = month.split('-').map(Number);
   return new Date(year, monthNum, 0).getDate();
@@ -257,12 +276,32 @@ const SalesPersonalDashboardPage: React.FC<Props> = ({ currentUser }) => {
           tone={shortage === 0 && targetAmount > 0 ? 'good' : 'danger'}
         />
         <KpiCard
-          label="1営業日あたり必要額"
-          value={targetAmount ? formatCurrency(requiredPerBusinessDay) : '—'}
-          sub={`残り営業日 ${remainingBusinessDays}日`}
-          icon={<AlertTriangle className="h-5 w-5" />}
-          tone={requiredPerBusinessDay === 0 && targetAmount > 0 ? 'good' : 'warning'}
-        />
+  label={isCurrentMonth(month) ? '1営業日あたり必要額' : '営業日あたり実績'}
+  value={
+    isCurrentMonth(month)
+      ? targetAmount
+        ? formatCurrency(requiredPerBusinessDay)
+        : '—'
+      : formatCurrency(
+          remainingBusinessDays > 0
+            ? Math.round(actualAmount / remainingBusinessDays)
+            : 0
+        )
+  }
+  sub={
+    isCurrentMonth(month)
+      ? `残り営業日 ${remainingBusinessDays}日`
+      : `営業日数 ${remainingBusinessDays}日`
+  }
+  icon={<AlertTriangle className="h-5 w-5" />}
+  tone={
+    isCurrentMonth(month)
+      ? requiredPerBusinessDay === 0 && targetAmount > 0
+        ? 'good'
+        : 'warning'
+      : 'normal'
+  }
+/>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
