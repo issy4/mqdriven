@@ -2036,7 +2036,7 @@ const fetchUsersDirectly = async (supabase: SupabaseClient): Promise<EmployeeUse
     try {
         // First fetch users
         console.log('[dataService] Fetching users...');
-        const userSelectColumns = 'id, name, name_kana, email, role, created_at, department_id, position_id, is_active, notification_enabled';
+        const userSelectColumns = 'id, name, name_kana, email, role, created_at, department_id, position_id, is_active, notification_enabled is_sales_user';
         const result = await supabase
             .from('users')
             .select(userSelectColumns)
@@ -2046,7 +2046,7 @@ const fetchUsersDirectly = async (supabase: SupabaseClient): Promise<EmployeeUse
         if (userError && isMissingColumnError(userError)) {
             const fallbackResult = await supabase
                 .from('users')
-                .select('id, name, email, role, created_at, department_id, position_id, is_active, notification_enabled')
+                .select('id, name, email, role, created_at, department_id, position_id, is_active, notification_enabled is_sales_user')
                 .order('name', { ascending: true });
             userRows = fallbackResult.data;
             userError = fallbackResult.error;
@@ -2117,6 +2117,9 @@ const fetchUsersDirectly = async (supabase: SupabaseClient): Promise<EmployeeUse
             createdAt: user.created_at,
             isActive: user.is_active === null || user.is_active === undefined ? true : Boolean(user.is_active),
             notificationEnabled: user.notification_enabled === null || user.notification_enabled === undefined ? true : Boolean(user.notification_enabled),
+
+            // 追加
+            is_sales_user: user.is_sales_user === true,            
         };
     });
 };

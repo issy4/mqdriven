@@ -209,6 +209,7 @@ import { ToastContainer } from './components/Toast';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import SalesDashboard from './components/sales/SalesDashboard';
 import OrderLedgerManagementPage from './components/sales/OrderLedgerManagementPage';
+import SalesPersonalDashboardPage from './components/sales/SalesPersonalDashboardPage';
 import ManufacturingCostManagement from './components/accounting/ManufacturingCostManagement';
 import AuditLogPage from './components/admin/AuditLogPage';
 import JournalQueuePage from './components/admin/JournalQueuePage';
@@ -318,6 +319,7 @@ const PAGE_TITLES: Record<Page, string> = {
     sales_estimates: '見積管理',
     quote_center: '見積作成センター',
     sales_orders: '受注台帳・目標管理',
+    sales_personal_dashboard: 'マイ営業ダッシュボード',
     project_management: 'プロジェクト管理',
     sales_billing: '請求書発行・送信管理',
     legacy_billing: '請求管理',
@@ -466,6 +468,7 @@ const App: React.FC = () => {
     const [currentPage, setCurrentPage] = useState<Page>('analysis_dashboard');
     const [searchTerm, setSearchTerm] = useState('');
     const [currentUser, setCurrentUser] = useState<EmployeeUser | null>(null);
+    const [hasSetInitialPage, setHasSetInitialPage] = useState(false);
     const [user, setUser] = useState<any>(null); // TODO: Replace 'any' with proper user type
 
     const onUserChange = (newUser: any) => {
@@ -654,6 +657,18 @@ const App: React.FC = () => {
         setSearchTerm('');
         // OCR状態はリセットしない - ページ離脱時も状態を維持
     };
+
+    useEffect(() => {
+    if (!currentUser || hasSetInitialPage) return;
+
+    if (currentUser.is_sales_user === true) {
+        setCurrentPage('sales_personal_dashboard');
+    } else {
+        setCurrentPage('analysis_dashboard');
+    }
+
+    setHasSetInitialPage(true);
+}, [currentUser, hasSetInitialPage]);
 
     const handleDailyReportPrefillApplied = () => {
         setDailyReportPrefill(null);
@@ -1409,6 +1424,12 @@ const App: React.FC = () => {
                         onToast={addToast}
                     />
                 );
+            case 'sales_personal_dashboard':
+    return (
+        <SalesPersonalDashboardPage
+            currentUser={currentUser}
+        />
+    );
             case 'sales_customers':
             case 'sales_customers_chart':
                 if (showBulkOCR) {
