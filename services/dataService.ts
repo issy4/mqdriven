@@ -6682,6 +6682,60 @@ export const getMonthlyOrderCustomerRanking = async (
     return rows;
 };
 
+export type SalesPersonalFollowupCandidate = {
+  target_month: string;
+  user_id: string;
+  customer_id: string | null;
+  customer_code: string | null;
+  customer_name: string;
+  current_month_amount: number;
+  current_month_order_count: number;
+  previous_month_amount: number;
+  previous_month_order_count: number;
+  last_6_month_avg_amount: number;
+  last_6_month_active_months: number;
+  last_order_date: string | null;
+  days_since_last_order: number | null;
+  followup_reason: string;
+  priority_amount: number;
+};
+
+export const getSalesPersonalFollowupCandidates = async (
+  userId: string,
+  month: string,
+): Promise<SalesPersonalFollowupCandidate[]> => {
+  const supabase = getSupabase();
+  const { monthStart } = getMonthBoundaries(month);
+
+  const { data, error } = await supabase.rpc(
+    'get_sales_personal_followup_candidates',
+    {
+      p_user_id: userId,
+      p_target_month: monthStart,
+    },
+  );
+
+  ensureSupabaseSuccess(error, 'Failed to fetch sales personal followup candidates');
+
+  return (data || []).map(row => ({
+    target_month: toStringOrNull(row.target_month) ?? monthStart,
+    user_id: String(row.user_id),
+    customer_id: toStringOrNull(row.customer_id),
+    customer_code: toStringOrNull(row.customer_code),
+    customer_name: toStringOrNull(row.customer_name) ?? '顧客名未設定',
+    current_month_amount: toNumberOrZero(row.current_month_amount),
+    current_month_order_count: toNumberOrZero(row.current_month_order_count),
+    previous_month_amount: toNumberOrZero(row.previous_month_amount),
+    previous_month_order_count: toNumberOrZero(row.previous_month_order_count),
+    last_6_month_avg_amount: toNumberOrZero(row.last_6_month_avg_amount),
+    last_6_month_active_months: toNumberOrZero(row.last_6_month_active_months),
+    last_order_date: toStringOrNull(row.last_order_date),
+    days_since_last_order: toNumberOrNull(row.days_since_last_order),
+    followup_reason: toStringOrNull(row.followup_reason) ?? '通常',
+    priority_amount: toNumberOrZero(row.priority_amount),
+  }));
+};
+
 export const getSalesTargetUsers = async (): Promise<SalesTargetUser[]> => {
     const supabase = getSupabase();
     const { data, error } = await supabase
