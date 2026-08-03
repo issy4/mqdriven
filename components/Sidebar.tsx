@@ -183,11 +183,23 @@ export const buildNavCategories = (
   const baseCategories = decorateCategories(BASE_NAV_CATEGORIES, pendingApprovalCount, accountingCounts);
 
   const isAdmin = user?.role === 'admin';
+  const isSalesUser = user?.is_sales_user === true;
 
   return baseCategories
     .filter((category) => isAdmin || !category.adminOnly)
     .map(category => {
-      const items = isAdmin ? category.items : category.items.filter(item => !item.adminOnly);
+      const items = category.items.filter(item => {
+        if (item.adminOnly && !isAdmin) {
+          return false;
+        }
+
+        if (item.page === 'sales_personal_dashboard') {
+          return isSalesUser;
+        }
+
+        return true;
+      });
+
       return { ...category, items };
     })
     .filter(category => category.items.length > 0);
