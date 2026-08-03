@@ -653,6 +653,12 @@ const App: React.FC = () => {
             addToast('経営計画は管理者のみ閲覧できます。', 'error');
             return;
         }
+
+        if (page === 'sales_personal_dashboard' && currentUser?.is_sales_user !== true) {
+    addToast('マイ営業ダッシュボードは営業ユーザーのみ閲覧できます。', 'error');
+    return;
+}
+
         setCurrentPage(page);
         setSearchTerm('');
         // OCR状態はリセットしない - ページ離脱時も状態を維持
