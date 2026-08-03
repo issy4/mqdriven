@@ -47,6 +47,7 @@ export type Page =
   | 'detailed_estimate'
   | 'customer_dashboard'
   | 'turnaround_plan'
+  | 'sales_personal_dashboard'
   | 'new_ai_estimate'; // Adding new page type
 
 // Allow loose typing for legacy camelCase usage across the app.
@@ -839,6 +840,7 @@ export interface EmployeeUser extends User {
   position_id?: string;
   department_name?: string;
   position_name?: string;
+  is_sales_user?: boolean;
 }
 
 // Journal entry types
