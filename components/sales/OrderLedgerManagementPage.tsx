@@ -22,6 +22,9 @@ import {
 } from '../../services/dataService';
 import { formatJPY } from '../../utils';
 
+const FOLLOWUP_SHEET_URL =
+  'https://docs.google.com/spreadsheets/d/1ebFjKe8Wcv2YHi2v83wp5i-21t01VhY2CJiBxw_ODEk/edit?usp=sharing';
+
 interface OrderLedgerManagementPageProps {
   currentUser: EmployeeUser | null;
   onToast?: (message: string, type: Toast['type']) => void;
@@ -451,6 +454,14 @@ const saveAnnualTarget = async (userId: string) => {
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             更新
           </button>
+          <a
+  href={FOLLOWUP_SHEET_URL}
+  target="_blank"
+  rel="noopener noreferrer"
+  className="h-9 px-4 inline-flex items-center justify-center gap-2 border border-teal-200 bg-white hover:bg-teal-50 text-teal-700 text-sm font-semibold rounded-md transition-colors"
+>
+  前年案件フォロー表
+</a>
         </div>
       </div>
 
