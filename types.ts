@@ -191,6 +191,43 @@ export interface Customer extends LooseRecord {
   is_customer_chart?: boolean;
 }
 
+export interface CustomerContact {
+  id: string;
+  originalCustomerId?: string | null;
+  customerId?: string | null;
+
+  companyName: string;
+  companyNameKana?: string | null;
+  customerCode?: string | null;
+
+  personName?: string | null;
+  personNameKana?: string | null;
+  personTitle?: string | null;
+  department?: string | null;
+
+  email?: string | null;
+  phoneNumber?: string | null;
+  mobileNumber?: string | null;
+  faxNumber?: string | null;
+
+  postalCode?: string | null;
+  address1?: string | null;
+  address2?: string | null;
+  websiteUrl?: string | null;
+
+  businessEvent?: string | null;
+  receivedByEmployeeCode?: string | null;
+  source?: string | null;
+
+  allowEmailMarketing?: boolean;
+  emailMarketingStatus?: string | null;
+
+  memo?: string | null;
+
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface CustomerRank extends LooseRecord {
   id: string; // 'S', 'A', 'B', etc.
   name: string;

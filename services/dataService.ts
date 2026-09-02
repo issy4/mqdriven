@@ -2,6 +2,7 @@ import { getSupabase, getSupabaseFunctionHeaders } from './supabaseClient';
 import { sendApprovalNotification, sendApprovalRouteCreatedNotification } from './notificationService';
 import { enrichCustomerData } from './geminiService';
 import { createClient } from '@supabase/supabase-js';
+import { CustomerContact } from '../types';
 import type { SupabaseClient as SupabaseClientType } from '@supabase/supabase-js';
 import type { PostgrestError } from '@supabase/supabase-js';
 import { validateKatakana } from '../utils/katakanaValidation';
@@ -6384,6 +6385,95 @@ export const createExpenseInvoice = async (params: CreateExpenseInvoiceParams): 
         console.error('[createExpenseInvoice] Unexpected error:', err);
         return null;
     }
+};
+
+export const createCustomerContact = async (
+  contact: Partial<CustomerContact>
+): Promise<CustomerContact> => {
+  const supabase = getSupabase();
+
+  if (!contact.companyName) {
+    throw new Error('会社名は必須です。');
+  }
+
+  const payload = {
+    customer_id: contact.customerId ?? null,
+    company_name: contact.companyName,
+    company_name_kana: contact.companyNameKana ?? null,
+    customer_code: contact.customerCode ?? null,
+
+    person_name: contact.personName ?? null,
+    person_name_kana: contact.personNameKana ?? null,
+    person_title: contact.personTitle ?? null,
+    department: contact.department ?? null,
+
+    email: contact.email ?? null,
+    phone_number: contact.phoneNumber ?? null,
+    mobile_number: contact.mobileNumber ?? null,
+    fax_number: contact.faxNumber ?? null,
+
+    postal_code: contact.postalCode ?? null,
+    address_1: contact.address1 ?? null,
+    address_2: contact.address2 ?? null,
+    website_url: contact.websiteUrl ?? null,
+
+    business_event: contact.businessEvent ?? null,
+    received_by_employee_code: contact.receivedByEmployeeCode ?? null,
+    source: contact.source ?? 'business_card_ocr',
+
+    allow_email_marketing: contact.allowEmailMarketing ?? true,
+    email_marketing_status: contact.emailMarketingStatus ?? '未確認',
+
+    memo: contact.memo ?? null,
+  };
+
+  const { data, error } = await supabase
+    .from('customer_contacts')
+    .insert(payload)
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('Failed to create customer contact:', error);
+    throw new Error('名刺連絡先の登録に失敗しました。');
+  }
+
+  return {
+    id: data.id,
+    originalCustomerId: data.original_customer_id,
+    customerId: data.customer_id,
+
+    companyName: data.company_name,
+    companyNameKana: data.company_name_kana,
+    customerCode: data.customer_code,
+
+    personName: data.person_name,
+    personNameKana: data.person_name_kana,
+    personTitle: data.person_title,
+    department: data.department,
+
+    email: data.email,
+    phoneNumber: data.phone_number,
+    mobileNumber: data.mobile_number,
+    faxNumber: data.fax_number,
+
+    postalCode: data.postal_code,
+    address1: data.address_1,
+    address2: data.address_2,
+    websiteUrl: data.website_url,
+
+    businessEvent: data.business_event,
+    receivedByEmployeeCode: data.received_by_employee_code,
+    source: data.source,
+
+    allowEmailMarketing: data.allow_email_marketing,
+    emailMarketingStatus: data.email_marketing_status,
+
+    memo: data.memo,
+
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
 };
 
 // =====================================================================

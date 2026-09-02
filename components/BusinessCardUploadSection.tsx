@@ -1,5 +1,5 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BusinessCardContact, Customer, EmployeeUser, Toast } from '../types';
+import { BusinessCardContact, Customer, CustomerContact, EmployeeUser, Toast } from '../types';
 import { extractBusinessCardDetails } from '../services/geminiService';
 import { googleDriveService, GoogleDriveFile } from '../services/googleDriveService';
 import { Upload, Loader, CheckCircle, AlertTriangle, Trash2, FileText, RefreshCw, X } from './Icons';
@@ -11,7 +11,9 @@ interface BusinessCardUploadSectionProps {
   currentUser?: EmployeeUser | null;
   allUsers?: EmployeeUser[];
   onApplyToForm: (data: Partial<Customer>) => void;
-  onAutoCreateCustomer?: (data: Partial<Customer>) => Promise<Customer>;
+
+  // 名刺OCRの自動登録先は customers ではなく customer_contacts
+  onAutoCreateCustomerContact?: (data: Partial<CustomerContact>) => Promise<CustomerContact>;
 }
 
 type OcrStatus = 'processing' | 'ready' | 'error';
@@ -26,8 +28,14 @@ type CardDraft = {
   ocrStatus: OcrStatus;
   insertStatus: InsertStatus;
   contact: BusinessCardContact;
+
+  // 画面の既存顧客フォーム表示用
   customerPayload?: Partial<Customer>;
-  createdCustomer?: Customer | null;
+
+  // customer_contacts 登録用
+  contactPayload?: Partial<CustomerContact>;
+  createdContact?: CustomerContact | null;
+
   ocrError?: string;
   insertError?: string;
   needsManualConfirmation?: boolean;
@@ -109,8 +117,46 @@ const contactToCustomer = (contact: BusinessCardContact): Partial<Customer> => {
   };
 };
 
+const contactToCustomerContact = (contact: BusinessCardContact): Partial<CustomerContact> => {
+  const companyName =
+    sanitizeCustomerName(contact.companyName) ||
+    sanitizeCustomerName(contact.personName) ||
+    '会社名未設定';
+
+  return {
+    companyName,
+    companyNameKana: contact.companyNameKana || undefined,
+
+    personName: contact.personName || undefined,
+    personNameKana: contact.personNameKana || undefined,
+    personTitle: contact.title || undefined,
+    department: contact.department || undefined,
+
+    email: contact.email || undefined,
+    phoneNumber: contact.phoneNumber || undefined,
+    mobileNumber: contact.mobileNumber || undefined,
+    faxNumber: contact.faxNumber || undefined,
+
+    postalCode: contact.postalCode || undefined,
+    address1: contact.address || undefined,
+    websiteUrl: contact.websiteUrl || undefined,
+
+    businessEvent: contact.businessEvent || undefined,
+    receivedByEmployeeCode: contact.recipientEmployeeCode || undefined,
+
+    memo: [buildContactNote(contact), contact.notes].filter(Boolean).join('\n\n') || undefined,
+
+    source: 'business_card_ocr',
+    allowEmailMarketing: true,
+    emailMarketingStatus: '未確認',
+  };
+};
+
 const hasCustomerName = (payload?: Partial<Customer>) =>
   Boolean(sanitizeCustomerName(payload?.customerName));
+
+const hasContactCompanyName = (payload?: Partial<CustomerContact>) =>
+  Boolean(sanitizeCustomerName(payload?.companyName));
 
 const guessDriveMimeType = (fileName: string, fallback = 'image/jpeg'): string => {
   const lower = fileName.toLowerCase();
@@ -149,7 +195,7 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
   currentUser,
   allUsers = [],
   onApplyToForm,
-  onAutoCreateCustomer,
+  onAutoCreateCustomerContact,
 }) => {
   const [drafts, setDrafts] = useState<CardDraft[]>([]);
   const [eventName, setEventName] = useState('');
@@ -212,86 +258,102 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
       ? crypto.randomUUID()
       : `card-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  const autoCreateCustomer = useCallback(
-    async (draftId: string, payload: Partial<Customer>) => {
-      if (!hasCustomerName(payload)) {
-        const message = 'Customer name is required before creating a customer.';
-        setDrafts(prev =>
-          prev.map(draft =>
-            draft.id === draftId ? { ...draft, insertStatus: 'error', insertError: message } : draft
-          )
-        );
-        addToast(message, 'error');
-        return;
-      }
-      if (!onAutoCreateCustomer) {
-        onApplyToForm(payload);
-        addToast('Applied card details to the form. Please save to register.', 'success');
-        logActionEvent({
-          module: 'BusinessCard OCR',
-          severity: 'info',
-          status: 'pending',
-          summary: `BusinessCard OCR: ${payload.customerName || 'Unknown'} applied to form`,
-          detail: `Contact: ${describeRepresentative(payload.representative, payload.representativeTitle)}`,
-          ...actorInfo,
-        });
-        handleRemoveDraft(draftId);
-        return;
-      }
+  const autoCreateCustomerContact = useCallback(
+  async (
+    draftId: string,
+    customerPayload: Partial<Customer>,
+    contactPayload: Partial<CustomerContact>
+  ) => {
+    if (!hasContactCompanyName(contactPayload)) {
+      const message = 'Company name is required before creating a contact.';
+      setDrafts(prev =>
+        prev.map(draft =>
+          draft.id === draftId ? { ...draft, insertStatus: 'error', insertError: message } : draft
+        )
+      );
+      addToast(message, 'error');
+      return;
+    }
+
+    if (!onAutoCreateCustomerContact) {
+      onApplyToForm(customerPayload);
+      addToast('Applied card details to the form. Please save to register.', 'success');
+      logActionEvent({
+        module: 'BusinessCard OCR',
+        severity: 'info',
+        status: 'pending',
+        summary: `BusinessCard OCR: ${customerPayload.customerName || contactPayload.companyName || 'Unknown'} applied to form`,
+        detail: `Contact: ${describeRepresentative(
+          customerPayload.representative,
+          customerPayload.representativeTitle
+        )}`,
+        ...actorInfo,
+      });
+      handleRemoveDraft(draftId);
+      return;
+    }
+
+    setDrafts(prev =>
+      prev.map(draft =>
+        draft.id === draftId ? { ...draft, insertStatus: 'saving', insertError: undefined } : draft
+      )
+    );
+
+    try {
+      const created = await onAutoCreateCustomerContact(contactPayload);
 
       setDrafts(prev =>
         prev.map(draft =>
-          draft.id === draftId ? { ...draft, insertStatus: 'saving', insertError: undefined } : draft
+          draft.id === draftId
+            ? {
+                ...draft,
+                insertStatus: 'success',
+                createdContact: created,
+                contactPayload: { ...contactPayload, id: created.id },
+              }
+            : draft
         )
       );
 
-      try {
-        const created = await onAutoCreateCustomer(payload);
-        setDrafts(prev =>
-          prev.map(draft =>
-            draft.id === draftId
-              ? {
-                  ...draft,
-                  insertStatus: 'success',
-                  createdCustomer: created,
-                  customerPayload: { ...payload, id: created.id },
-                }
-              : draft
-          )
-        );
-        addToast(`Registered "${created.customerName || payload.customerName || 'Business Card'}".`, 'success');
-        onApplyToForm(created);
-        logActionEvent({
-          module: 'BusinessCard OCR',
-          severity: 'info',
-          status: 'success',
-          summary: `BusinessCard OCR: ${created.customerName || payload.customerName || 'Unknown'} registered`,
-          detail: `Contact: ${describeRepresentative(
-            created.representative ?? payload.representative,
-            created.representativeTitle ?? payload.representativeTitle
-          )}`,
-          ...actorInfo,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to register customer.';
-        setDrafts(prev =>
-          prev.map(draft =>
-            draft.id === draftId ? { ...draft, insertStatus: 'error', insertError: message } : draft
-          )
-        );
-        addToast(message, 'error');
-        logActionEvent({
-          module: 'BusinessCard OCR',
-          severity: 'critical',
-          status: 'failure',
-          summary: `BusinessCard OCR: ${payload.customerName || 'Unknown'} registration failed`,
-          detail: message,
-          ...actorInfo,
-        });
-      }
-    },
-    [onAutoCreateCustomer, onApplyToForm, addToast, actorInfo, hasCustomerName]
-  );
+      addToast(
+        `Registered contact "${created.companyName || contactPayload.companyName || 'Business Card'}".`,
+        'success'
+      );
+
+      // 登録後も確認用にフォームへ反映する。ただし保存先は customer_contacts。
+      onApplyToForm(customerPayload);
+
+      logActionEvent({
+        module: 'BusinessCard OCR',
+        severity: 'info',
+        status: 'success',
+        summary: `BusinessCard OCR: ${created.companyName || contactPayload.companyName || 'Unknown'} contact registered`,
+        detail: `Contact: ${describeRepresentative(
+          created.personName ?? contactPayload.personName,
+          created.personTitle ?? contactPayload.personTitle
+        )}`,
+        ...actorInfo,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to register contact.';
+      setDrafts(prev =>
+        prev.map(draft =>
+          draft.id === draftId ? { ...draft, insertStatus: 'error', insertError: message } : draft
+        )
+      );
+      addToast(message, 'error');
+      logActionEvent({
+        module: 'BusinessCard OCR',
+        severity: 'critical',
+        status: 'failure',
+        summary: `BusinessCard OCR: ${contactPayload.companyName || customerPayload.customerName || 'Unknown'} contact registration failed`,
+        detail: message,
+        ...actorInfo,
+      });
+    }
+  },
+  [onAutoCreateCustomerContact, onApplyToForm, addToast, actorInfo]
+);
 
   const runOcr = useCallback(
     async (draftId: string, file: File) => {
@@ -308,12 +370,19 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
         const contact = normalizeContact(parsed);
         const needsConfirmation =
           !sanitizeCustomerName(contact.companyName) && !sanitizeCustomerName(contact.personName);
-        const payload = contactToCustomer(contact);
-        const payloadWithMeta: Partial<Customer> = {
-          ...payload,
-          businessEvent: eventName || undefined,
-          receivedByEmployeeCode: recipientCode || undefined,
-        };
+        const customerPayload = contactToCustomer(contact);
+const customerPayloadWithMeta: Partial<Customer> = {
+  ...customerPayload,
+  businessEvent: eventName || undefined,
+  receivedByEmployeeCode: recipientCode || undefined,
+};
+
+const contactPayload = contactToCustomerContact(contact);
+const contactPayloadWithMeta: Partial<CustomerContact> = {
+  ...contactPayload,
+  businessEvent: eventName || undefined,
+  receivedByEmployeeCode: recipientCode || undefined,
+};
         setDrafts(prev =>
           prev.map(draft =>
             draft.id === draftId
@@ -321,7 +390,8 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
                   ...draft,
                   ocrStatus: 'ready',
                   contact,
-                  customerPayload: payloadWithMeta,
+                  customerPayload: customerPayloadWithMeta,
+                  contactPayload: contactPayloadWithMeta,
                   ocrError: undefined,
                   needsManualConfirmation: needsConfirmation,
                 }
@@ -353,7 +423,7 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
         });
       }
     },
-    [actorInfo, autoCreateCustomer]
+    [actorInfo, eventName, recipientCode]
   );
 
   const queueBusinessCardFile = useCallback(
@@ -492,50 +562,84 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
   };
 
   const handleLoadToForm = (draft: CardDraft) => {
-    if (draft.createdCustomer) {
-      onApplyToForm(draft.createdCustomer);
-      addToast('Customer created. Loaded into the form for review.', 'success');
-    } else if (draft.customerPayload) {
-      onApplyToForm(draft.customerPayload);
-      addToast('Draft loaded into the form. Review and save when ready.', 'success');
-    }
-  };
+  if (draft.customerPayload) {
+    onApplyToForm(draft.customerPayload);
+    addToast('Draft loaded into the form for review.', 'success');
+  }
+};
 
   const handleRetryInsert = (draft: CardDraft) => {
-    if (draft.customerPayload) {
-      void autoCreateCustomer(draft.id, draft.customerPayload);
-    }
-  };
+  if (draft.customerPayload && draft.contactPayload) {
+    void autoCreateCustomerContact(draft.id, draft.customerPayload, draft.contactPayload);
+  }
+};
 
   const updateDraftPayloadField = (draftId: string, field: keyof Customer, value: string) => {
-    setDrafts(prev =>
-      prev.map(draft => {
-        if (draft.id !== draftId) return draft;
-        const updatedPayload = {
-          ...(draft.customerPayload ?? {}),
-          [field]: value,
-        };
-        const needsManual = !hasCustomerName(updatedPayload);
-        return {
-          ...draft,
-          customerPayload: updatedPayload,
-          needsManualConfirmation: needsManual,
-        };
-      })
-    );
-  };
+  setDrafts(prev =>
+    prev.map(draft => {
+      if (draft.id !== draftId) return draft;
+
+      const updatedCustomerPayload: Partial<Customer> = {
+        ...(draft.customerPayload ?? {}),
+        [field]: value,
+      };
+
+      const updatedContactPayload: Partial<CustomerContact> = {
+        ...(draft.contactPayload ?? {}),
+      };
+
+      if (field === 'customerName') {
+        updatedContactPayload.companyName = value;
+      }
+
+      if (field === 'representative') {
+        updatedContactPayload.personName = value;
+      }
+
+      if (field === 'representativeTitle') {
+        updatedContactPayload.personTitle = value;
+      }
+
+      if (field === 'phoneNumber') {
+        updatedContactPayload.phoneNumber = value;
+      }
+
+      if (field === 'customerContactInfo') {
+        updatedContactPayload.email = value;
+      }
+
+      if (field === 'address1') {
+        updatedContactPayload.address1 = value;
+      }
+
+      const needsManual = !hasContactCompanyName(updatedContactPayload);
+
+      return {
+        ...draft,
+        customerPayload: updatedCustomerPayload,
+        contactPayload: updatedContactPayload,
+        needsManualConfirmation: needsManual,
+      };
+    })
+  );
+};
 
   const confirmDraft = async (draft: CardDraft) => {
-    if (!draft.customerPayload || !hasCustomerName(draft.customerPayload)) return;
-    await autoCreateCustomer(draft.id, draft.customerPayload);
-  };
+  if (!draft.customerPayload || !draft.contactPayload || !hasContactCompanyName(draft.contactPayload)) return;
+  await autoCreateCustomerContact(draft.id, draft.customerPayload, draft.contactPayload);
+};
 
   const [isBulkConfirming, setBulkConfirming] = useState(false);
 
   const confirmReadyDrafts = async () => {
     const readyDrafts = drafts.filter(
-      draft => draft.ocrStatus === 'ready' && draft.insertStatus !== 'success' && draft.customerPayload && hasCustomerName(draft.customerPayload)
-    );
+  draft =>
+    draft.ocrStatus === 'ready' &&
+    draft.insertStatus !== 'success' &&
+    draft.customerPayload &&
+    draft.contactPayload &&
+    hasContactCompanyName(draft.contactPayload)
+);
     if (!readyDrafts.length) return;
     setBulkConfirming(true);
     try {
@@ -558,8 +662,8 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
     };
     drafts.forEach(draft => {
       if (draft.ocrStatus === 'processing') stats.processing += 1;
-      if (draft.ocrStatus === 'ready' && hasCustomerName(draft.customerPayload)) stats.ready += 1;
-      if (draft.ocrStatus === 'ready' && !hasCustomerName(draft.customerPayload)) stats.unconfirmed += 1;
+      if (draft.ocrStatus === 'ready' && hasContactCompanyName(draft.contactPayload)) stats.ready += 1;
+if (draft.ocrStatus === 'ready' && !hasContactCompanyName(draft.contactPayload)) stats.unconfirmed += 1;
       if (draft.insertStatus === 'success') stats.success += 1;
       if (draft.insertStatus === 'error' || draft.ocrStatus === 'error') stats.error += 1;
     });
@@ -702,8 +806,8 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
         {drafts.length === 0 ? (
           <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4 text-sm text-slate-600 dark:text-slate-300 text-left">
             <p>No business cards yet. Upload a file to start OCR.</p>
-            <p>OCR results appear as drafts. Review and confirm before creating customers.</p>
-            <p>Unconfirmed drafts will not create customers.</p>
+            <p>OCR results appear as drafts. Review and confirm before registering contacts.</p>
+<p>Unconfirmed drafts will not register contacts.</p>
           </div>
         ) : (
           drafts.map(draft => {
@@ -711,10 +815,10 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
             const ocrStatus = OCR_STATUS_STYLES[draft.ocrStatus];
             const insertStatus = INSERT_STATUS_STYLES[draft.insertStatus];
             const canConfirm =
-              draft.ocrStatus === 'ready' &&
-              draft.insertStatus !== 'saving' &&
-              draft.insertStatus !== 'success' &&
-              hasCustomerName(draft.customerPayload);
+  draft.ocrStatus === 'ready' &&
+  draft.insertStatus !== 'saving' &&
+  draft.insertStatus !== 'success' &&
+  hasContactCompanyName(draft.contactPayload);
             return (
               <div
                 key={draft.id}
@@ -913,7 +1017,7 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
                     }`}
                   >
                     <CheckCircle className="w-4 h-4" />
-                    {draft.insertStatus === 'saving' ? 'Saving...' : 'Confirm & Create'}
+                    {draft.insertStatus === 'saving' ? 'Saving...' : 'Confirm & Register Contact'}
                   </button>
                   {draft.insertStatus === 'error' && draft.customerPayload && (
                     <button
@@ -925,7 +1029,7 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
                       Retry Save
                     </button>
                   )}
-                  {(draft.insertStatus === 'success' || (!onAutoCreateCustomer && draft.customerPayload)) && (
+                  {(draft.insertStatus === 'success' || (!onAutoCreateCustomerContact && draft.customerPayload)) && (
                     <button
                       type="button"
                       onClick={() => handleLoadToForm(draft)}
@@ -956,7 +1060,7 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
             </span>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Review drafts and confirm before creating customers.
+            Review drafts and confirm before registering contacts.
           </p>
         </div>
       )}
