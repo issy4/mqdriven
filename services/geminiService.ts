@@ -1107,28 +1107,83 @@ export const extractBusinessCardDetails = async (
     const filePart = { inlineData: { data: fileBase64, mimeType } };
 
     const instructionPart = {
-      text: `このファイルは日本語の名刺または名刺スキャンPDFです。
+  text: `このファイルは日本語の名刺または名刺スキャンPDFです。
 名刺の内容を読み取り、必ず純粋なJSONのみで返してください。説明文、Markdown、コードフェンスは禁止です。
 
 【最重要ルール】
 1. companyNameには、正式な会社名・法人名だけを入れる。
 2. ロゴ名、ブランド名、キャッチコピー、スローガンはcompanyNameに入れない。
-3. 「共にある、未来へ」「未来へ」「Innovation」「Solution」などのキャッチコピーはnotesに入れる。
+3. 「共にある、未来へ」「未来へ」「Innovation」「Solution」「Future creation for all」などのキャッチコピーはnotesに入れる。
 4. 「株式会社」「有限会社」「合同会社」「一般社団法人」「公益財団法人」「学校法人」「医療法人」「協同組合」などを含む行を会社名として最優先する。
-5. personNameには人名だけを入れる。役職名は入れない。
-6. 「代表取締役社長」「取締役」「部長」「課長」「マネージャー」などはtitleに入れる。
-7. 日本語氏名とローマ字氏名が両方ある場合、personNameには日本語氏名を入れる。ローマ字はnotesに入れる。
+5. personNameには人名だけを入れる。役職名は絶対に入れない。
+6. 「代表取締役社長」「代表取締役」「取締役」「社長」「部長」「課長」「マネージャー」などはtitleに入れる。
+7. 日本語氏名とローマ字氏名が両方ある場合、personNameには日本語氏名を入れる。ローマ字氏名はnotesに入れる。
 8. TELとFAXは必ず分ける。
 9. 郵便番号はpostalCode、住所はaddressに分ける。
 10. 見つからない項目はnullではなく空文字で返す。
 
+【会社名抽出ルール】
+- companyNameは、法人格を含む正式名称を優先する。
+- 「TOMOWEL」のようなロゴ・ブランド名はcompanyNameにしない。
+- 「共にある、未来へ」のようなキャッチコピーはcompanyNameにしない。
+- 会社名候補が複数ある場合は、日本語の正式法人名を優先する。
+- 英語表記の会社名はnotesに入れる。
+
+【氏名抽出ルール】
+- personNameには、役職名の近くにある日本語の氏名を入れる。
+- 「代表取締役社長」「取締役」「社長」「部長」などの直下または近くにある大きな日本語文字列は氏名候補として最優先する。
+- 日本語氏名とローマ字氏名が横並びの場合、日本語氏名をpersonNameに入れる。
+- ローマ字氏名はpersonNameに入れず、notesに入れる。
+- 例：「大橋 輝臣 Ohashi Teruomi」の場合、personNameは「大橋 輝臣」、notesに「Ohashi Teruomi」と入れる。
+- 役職名だけの行をpersonNameに入れてはいけない。
+
+【役職抽出ルール】
+- titleには役職のみを入れる。
+- 「代表取締役社長」はtitleに入れる。
+- 氏名はtitleに入れない。
+- 部署名がある場合はdepartmentに入れる。
+
+【電話・FAX抽出ルール】
+- 「Tel:」「TEL:」「電話:」の後ろの番号はphoneNumberに入れる。
+- 「Fax:」「FAX:」の後ろの番号はfaxNumberに入れる。
+- 同じ行に Tel と Fax がある場合でも、必ず分けて抽出する。
+- 例：「Tel:03-3817-2002 Fax:03-3817-2120」の場合、phoneNumberは「03-3817-2002」、faxNumberは「03-3817-2120」。
+- 国際表記「+81-3-3817-2002」がある場合は、日本国内表記が一緒にあれば日本国内表記を優先する。
+
+【住所抽出ルール】
+- 「〒」または郵便番号から始まる行は住所として扱う。
+- postalCodeには郵便番号だけを入れる。
+- addressには郵便番号を除いた住所を入れる。
+- 例：「〒112-8501 東京都文京区小石川4-14-12」の場合、postalCodeは「112-8501」、addressは「東京都文京区小石川4-14-12」。
+- 英語住所しかない場合はaddressに英語住所を入れてよい。
+
 【今回のような名刺の判定例】
-- 「TOMOWEL」はロゴ・ブランド名なのでcompanyNameにしない。
-- 「共にある、未来へ」はキャッチコピーなのでcompanyNameにしない。
-- 「共同印刷株式会社」のように株式会社を含む行をcompanyNameにする。
-- 「代表取締役社長」はtitleにする。
-- 「大橋 輝臣」はpersonNameにする。
-- 「Ohashi Teruomi」はnotesに入れる。
+入力に以下が見える場合：
+TOMOWEL
+共にある、未来へ
+代表取締役社長
+大橋 輝臣 Ohashi Teruomi
+共同印刷株式会社
+〒112-8501 東京都文京区小石川4-14-12
+Tel:03-3817-2002 Fax:03-3817-2120
+
+出力は必ず以下のようにする：
+{
+  "companyName": "共同印刷株式会社",
+  "department": "",
+  "title": "代表取締役社長",
+  "personName": "大橋 輝臣",
+  "personNameKana": "",
+  "email": "",
+  "phoneNumber": "03-3817-2002",
+  "mobileNumber": "",
+  "faxNumber": "03-3817-2120",
+  "address": "東京都文京区小石川4-14-12",
+  "postalCode": "112-8501",
+  "websiteUrl": "",
+  "notes": "TOMOWEL / 共にある、未来へ / Ohashi Teruomi",
+  "recipientEmployeeCode": ""
+}
 
 【返却JSON形式】
 {
@@ -1147,7 +1202,7 @@ export const extractBusinessCardDetails = async (
   "notes": "",
   "recipientEmployeeCode": ""
 }`,
-    };
+};
 
     const response = await ai.models.generateContent({
       model: invoiceOcrModel,
