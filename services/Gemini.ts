@@ -120,13 +120,13 @@ if (!GEMINI_API_KEY && !isGeminiAIDisabled) {
 export const GEMINI_DEFAULT_MODEL =
   resolveEnvValue('VITE_GEMINI_MODEL') ??
   resolveEnvValue('NEXT_PUBLIC_GEMINI_MODEL') ??
-  'gemini-2.5-flash';
+  'gemini-3.6-flash';
 
 export const GEMINI_OCR_MODEL =
   resolveEnvValue('VITE_GEMINI_OCR_MODEL') ??
   resolveEnvValue('NEXT_PUBLIC_GEMINI_OCR_MODEL') ??
   resolveEnvValue('GEMINI_OCR_MODEL') ??
-  GEMINI_DEFAULT_MODEL;
+  'gemini-3.6-flash';
 
 // Vertex AI endpoints reject API keys, so we default to the standard Google AI endpoint here.
 export const geminiClient = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
