@@ -1807,7 +1807,7 @@ const App: React.FC = () => {
   return (
     <BusinessCardContactsPage
       currentUser={currentUser}
-      allUsers={users}
+      allUsers={allUsers}
       addToast={addToast}
       isAIOff={isAIOff}
     />
