@@ -245,6 +245,7 @@ import { getSupabase, getSupabaseFunctionHeaders, hasSupabaseCredentials } from 
 import type { Session, User as SupabaseAuthUser } from '@supabase/supabase-js';
 import { PlusCircle, Loader, AlertTriangle, RefreshCw, Settings, Menu } from './components/Icons';
 import { IS_AI_DISABLED as ENV_SHIM_AI_OFF } from './src/envShim';
+import BusinessCardContactsPage from './components/pages/BusinessCardContactsPage';
 
 
 
@@ -313,6 +314,7 @@ const PAGE_TITLES: Record<Page, string> = {
     sales_dashboard: '販売ダッシュボード',
     sales_leads: 'リード管理',
     sales_customers: '取引先',
+    business_card_contacts: '名刺OCR・連絡先管理',
     sales_customers_chart: '顧客/お客様カルテ',
     customer_dashboard: '顧客ダッシュボード',
     sales_pipeline: 'パイプライン',
@@ -1801,6 +1803,15 @@ const App: React.FC = () => {
                 return <FaxOcrIntakePage currentUser={currentUser} addToast={addToast} onNavigateToOrders={() => handleNavigate('sales_orders')} onNavigateToEstimates={() => handleNavigate('sales_estimates')} customers={customers || []} paymentRecipients={paymentRecipients || []} />;
             case 'accounting_trial_balance':
                 return <TrialBalancePage />;
+            case 'business_card_contacts':
+  return (
+    <BusinessCardContactsPage
+      currentUser={currentUser}
+      allUsers={users}
+      addToast={addToast}
+      isAIOff={isAIOff}
+    />
+  );
             default:
                 return <PlaceholderPage title={PAGE_TITLES[currentPage] || currentPage} />;
         }

@@ -48,7 +48,8 @@ export type Page =
   | 'customer_dashboard'
   | 'turnaround_plan'
   | 'sales_personal_dashboard'
-  | 'new_ai_estimate'; // Adding new page type
+  | 'new_ai_estimate'
+  | 'business_card_contacts'; // Adding new page type
 
 // Allow loose typing for legacy camelCase usage across the app.
 export interface LooseRecord {

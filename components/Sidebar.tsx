@@ -38,6 +38,7 @@ const BASE_NAV_CATEGORIES: NavCategoryType[] = [
       { page: 'sales_personal_dashboard', name: 'マイ営業ダッシュボード', icon: PieChart, },
       { page: 'business_forms_hub', name: '業務プロセス管理', icon: ClipboardList },
       { page: 'sales_leads', name: 'リード管理' },
+      { page: 'business_card_contacts', name: '名刺OCR・連絡先管理' },
       { page: 'sales_customers', name: '取引先Master' },
       { page: 'sales_customers_chart', name: '顧客カルテ/ランキング分析' },
       { page: 'sales_estimates', name: '見積管理' },

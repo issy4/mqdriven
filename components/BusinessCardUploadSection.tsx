@@ -1,5 +1,5 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BusinessCardContact, Customer, CustomerContact, EmployeeUser, Toast } from '../types';
+import { BusinessCardContact, CustomerContact, EmployeeUser, Toast } from '../types';
 import { extractBusinessCardDetails } from '../services/geminiService';
 import { googleDriveService, GoogleDriveFile } from '../services/googleDriveService';
 import { Upload, Loader, CheckCircle, AlertTriangle, Trash2, FileText, RefreshCw, X } from './Icons';
@@ -10,10 +10,7 @@ interface BusinessCardUploadSectionProps {
   isAIOff: boolean;
   currentUser?: EmployeeUser | null;
   allUsers?: EmployeeUser[];
-  onApplyToForm: (data: Partial<Customer>) => void;
-
-  // 名刺OCRの自動登録先は customers ではなく customer_contacts
-  onAutoCreateCustomerContact?: (data: Partial<CustomerContact>) => Promise<CustomerContact>;
+  onAutoCreateCustomerContact: (data: Partial<CustomerContact>) => Promise<CustomerContact>;
 }
 
 type OcrStatus = 'processing' | 'ready' | 'error';
@@ -28,14 +25,8 @@ type CardDraft = {
   ocrStatus: OcrStatus;
   insertStatus: InsertStatus;
   contact: BusinessCardContact;
-
-  // 画面の既存顧客フォーム表示用
-  customerPayload?: Partial<Customer>;
-
-  // customer_contacts 登録用
   contactPayload?: Partial<CustomerContact>;
   createdContact?: CustomerContact | null;
-
   ocrError?: string;
   insertError?: string;
   needsManualConfirmation?: boolean;
