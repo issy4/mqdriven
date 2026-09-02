@@ -745,7 +745,7 @@ if (draft.ocrStatus === 'ready' && !hasContactCompanyName(draft.contactPayload))
                 type="text"
                 value={eventName}
                 onChange={e => setEventName(e.target.value)}
-                placeholder="Optional event or campaign name"
+                placeholder="任意のイベント名またはキャンペーン名"
                 className="w-full rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-slate-900 dark:text-white shadow-sm"
               />
             </div>
@@ -775,7 +775,7 @@ if (draft.ocrStatus === 'ready' && !hasContactCompanyName(draft.contactPayload))
                 />
               )}
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Used to tag who received the card.
+                カードの受領者を記録するために使用します
               </p>
             </div>
           </div>
@@ -796,18 +796,18 @@ if (draft.ocrStatus === 'ready' && !hasContactCompanyName(draft.contactPayload))
       >
         <Upload className="w-10 h-10 mx-auto text-slate-400" />
         <p className="mt-3 text-base font-semibold text-slate-800 dark:text-slate-100">
-          Drag and drop files here (JPEG / PNG / PDF).
+          ここにファイルをドラッグ＆ドロップしてください（JPEG / PNG / PDF）
         </p>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          You can also click "Choose Files" or import from Google Drive.
+          「ファイルを選択」をクリックするか、Googleドライブからインポートすることもできます
         </p>
       </div>
       <div className="px-6 py-5 space-y-4 max-h-[360px] overflow-y-auto w-full">
         {drafts.length === 0 ? (
           <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4 text-sm text-slate-600 dark:text-slate-300 text-left">
-            <p>No business cards yet. Upload a file to start OCR.</p>
-            <p>OCR results appear as drafts. Review and confirm before registering contacts.</p>
-<p>Unconfirmed drafts will not register contacts.</p>
+            <p>まだ名刺がありません。ファイルをアップロードしてOCRを開始してください。</p>
+            <p>OCRの結果は下書きとして表示されます。顧客データを作成する前に、内容を確認・確定してください。</p>
+<p>未確定の下書きからは顧客データが作成されません。</p>
           </div>
         ) : (
           drafts.map(draft => {
@@ -924,11 +924,11 @@ if (draft.ocrStatus === 'ready' && !hasContactCompanyName(draft.contactPayload))
                       <dd>{draft.customerPayload?.address1 || '-'}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold text-slate-500">Business Event</dt>
+                      <dt className="text-xs font-semibold text-slate-500">ビジネスイベント</dt>
                       <dd>{draft.customerPayload?.businessEvent || '-'}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold text-slate-500">Received By</dt>
+                      <dt className="text-xs font-semibold text-slate-500">受領者</dt>
                       <dd>{formatRecipientLabel(draft.customerPayload?.receivedByEmployeeCode)}</dd>
                     </div>
                   </dl>
