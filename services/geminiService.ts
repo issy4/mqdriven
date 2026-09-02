@@ -792,87 +792,254 @@ export const extractEstimateFromPdf = async (
 const businessCardSchema = {
   type: Type.OBJECT,
   properties: {
-    companyName: { type: Type.STRING, description: "名刺に記載された会社名。" },
-    department: { type: Type.STRING, description: "部署名や部門名。" },
-    title: { type: Type.STRING, description: "役職名。" },
-    personName: { type: Type.STRING, description: "担当者名。" },
-    personNameKana: { type: Type.STRING, description: "担当者名のカナ読み。" },
-    email: { type: Type.STRING, description: "メールアドレス。" },
-    phoneNumber: { type: Type.STRING, description: "代表電話または固定電話。" },
-    mobileNumber: { type: Type.STRING, description: "携帯電話番号。" },
-    faxNumber: { type: Type.STRING, description: "FAX 番号。" },
-    address: { type: Type.STRING, description: "住所。" },
-    postalCode: { type: Type.STRING, description: "郵便番号。" },
-    websiteUrl: { type: Type.STRING, description: "WebサイトURL。" },
-    notes: { type: Type.STRING, description: "その他、名刺から読み取れる補足事項。" },
-    recipientEmployeeCode: { type: Type.STRING, description: "名刺右上などに手書きされた受領者の社員番号（赤ペン書き込みを優先）。" },
+    companyName: {
+      type: Type.STRING,
+      description:
+        "会社名・法人名。株式会社、有限会社、合同会社、一般社団法人、公益財団法人、学校法人、医療法人などを含む正式名称を優先。ロゴ名・ブランド名・キャッチコピーは会社名にしない。",
+    },
+    department: {
+      type: Type.STRING,
+      description: "部署名や部門名。例：営業部、総務部、制作部など。",
+    },
+    title: {
+      type: Type.STRING,
+      description:
+        "役職名。例：代表取締役社長、取締役、部長、課長、マネージャーなど。氏名は入れない。",
+    },
+    personName: {
+      type: Type.STRING,
+      description:
+        "担当者の氏名。日本語氏名を優先。ローマ字表記が近くにある場合は日本語氏名をpersonNameに入れ、ローマ字はnotesに入れる。",
+    },
+    personNameKana: {
+      type: Type.STRING,
+      description: "担当者名のカナ読み。分からない場合は空文字。",
+    },
+    email: {
+      type: Type.STRING,
+      description: "メールアドレス。見つからない場合は空文字。",
+    },
+    phoneNumber: {
+      type: Type.STRING,
+      description: "TEL、Tel、電話番号。FAXや携帯番号は入れない。",
+    },
+    mobileNumber: {
+      type: Type.STRING,
+      description: "携帯電話番号。見つからない場合は空文字。",
+    },
+    faxNumber: {
+      type: Type.STRING,
+      description: "FAX番号。TELとは分ける。",
+    },
+    address: {
+      type: Type.STRING,
+      description: "住所。郵便番号を含めてもよい。",
+    },
+    postalCode: {
+      type: Type.STRING,
+      description: "郵便番号。例：112-8501。",
+    },
+    websiteUrl: {
+      type: Type.STRING,
+      description: "WebサイトURL。見つからない場合は空文字。",
+    },
+    notes: {
+      type: Type.STRING,
+      description: "ローマ字氏名、ロゴ名、キャッチコピー、その他補足。",
+    },
+    recipientEmployeeCode: {
+      type: Type.STRING,
+      description: "名刺右上などに手書きされた受領者の社員番号。なければ空文字。",
+    },
   },
 };
 
-// テキストから名刺情報を抽出する関数
+const normalizeBusinessCardResult = (parsed: any): BusinessCardContact => {
+  const clean = (value: any): string | null => {
+    if (value === null || value === undefined) return null;
+
+    const text = String(value).trim();
+
+    if (!text) return null;
+    if (/^(null|undefined|n\/a|-)$/.test(text.toLowerCase())) return null;
+
+    return text;
+  };
+
+  const cleanPhone = (value: any): string | null => {
+    const text = clean(value);
+    if (!text) return null;
+
+    return text
+      .replace(/[ＴT][ＥE][ＬL]\s*[:：]?/g, '')
+      .replace(/電話\s*[:：]?/g, '')
+      .trim();
+  };
+
+  const cleanFax = (value: any): string | null => {
+    const text = clean(value);
+    if (!text) return null;
+
+    return text
+      .replace(/[ＦF][ＡA][ＸX]\s*[:：]?/g, '')
+      .trim();
+  };
+
+  const corporateKeywords = [
+    '株式会社',
+    '有限会社',
+    '合同会社',
+    '合名会社',
+    '合資会社',
+    '一般社団法人',
+    '公益社団法人',
+    '一般財団法人',
+    '公益財団法人',
+    '学校法人',
+    '医療法人',
+    '社会福祉法人',
+    '協同組合',
+    '生活衛生同業組合',
+  ];
+
+  const looksCorporateName = (value: string | null): boolean => {
+    if (!value) return false;
+    return corporateKeywords.some(keyword => value.includes(keyword));
+  };
+
+  const looksLikeTitle = (value: string | null): boolean => {
+    if (!value) return false;
+    return /(代表取締役|取締役|社長|会長|部長|課長|係長|専務|常務|執行役員|マネージャー|Manager|Director)/i.test(value);
+  };
+
+  const companyName = clean(parsed?.companyName);
+  const personName = clean(parsed?.personName);
+  const title = clean(parsed?.title);
+
+  let fixedCompanyName = companyName;
+  let fixedPersonName = personName;
+  let fixedTitle = title;
+
+  // 会社名欄にキャッチコピーやスローガンが入った場合の最低限ガード
+  if (fixedCompanyName && !looksCorporateName(fixedCompanyName)) {
+    const possibleCompanyFromNotes = clean(parsed?.companyNameCandidate);
+    if (looksCorporateName(possibleCompanyFromNotes)) {
+      fixedCompanyName = possibleCompanyFromNotes;
+    }
+  }
+
+  // 氏名欄に役職が入った場合は title 側へ移す
+  if (fixedPersonName && looksLikeTitle(fixedPersonName)) {
+    fixedTitle = fixedTitle || fixedPersonName;
+    fixedPersonName = null;
+  }
+
+  return {
+    companyName: fixedCompanyName,
+    department: clean(parsed?.department),
+    title: fixedTitle,
+    personName: fixedPersonName,
+    personNameKana: clean(parsed?.personNameKana),
+    email: clean(parsed?.email),
+    phoneNumber: cleanPhone(parsed?.phoneNumber),
+    mobileNumber: cleanPhone(parsed?.mobileNumber),
+    faxNumber: cleanFax(parsed?.faxNumber),
+    address: clean(parsed?.address),
+    postalCode: clean(parsed?.postalCode),
+    websiteUrl: clean(parsed?.websiteUrl),
+    notes: clean(parsed?.notes),
+    recipientEmployeeCode: clean(parsed?.recipientEmployeeCode),
+  };
+};
+
 const extractFromText = (text: string): Partial<BusinessCardContact> => {
   const result: Partial<BusinessCardContact> = {};
 
-  // 会社名の抽出
-  const companyPatterns = [
-    /(?:会社名|企業名|社名)[:：]\s*([^\n\r]+)/,
-    /([^\n\r]*(?:株式会社|有限会社|合名会社|合同会社| LLP| LLC))/,
+  const lines = text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  const corporateKeywords = [
+    '株式会社',
+    '有限会社',
+    '合同会社',
+    '合名会社',
+    '合資会社',
+    '一般社団法人',
+    '公益社団法人',
+    '一般財団法人',
+    '公益財団法人',
+    '学校法人',
+    '医療法人',
+    '社会福祉法人',
+    '協同組合',
+    '生活衛生同業組合',
   ];
 
-  for (const pattern of companyPatterns) {
-    const match = text.match(pattern);
-    if (match && match[1]) {
-      result.companyName = match[1].trim();
-      break;
-    }
+  const companyLine = lines.find(line =>
+    corporateKeywords.some(keyword => line.includes(keyword))
+  );
+
+  if (companyLine) {
+    result.companyName = companyLine;
   }
 
-  // 担当者名の抽出
-  const personPatterns = [
-    /(?:担当者|氏名|名前)[:：]\s*([^\n\r]+)/,
-    /(?:担当|営業|代表)[:：]\s*([^\n\r]+)/,
-  ];
-
-  for (const pattern of personPatterns) {
-    const match = text.match(pattern);
-    if (match && match[1]) {
-      result.personName = match[1].trim();
-      break;
-    }
-  }
-
-  // メールアドレスの抽出
-  const emailMatch = text.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+  const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
   if (emailMatch) {
-    result.email = emailMatch[1];
+    result.email = emailMatch[0];
   }
 
-  // 電話番号の抽出
-  const phonePatterns = [
-    /(?:TEL|電話|電話番号)[:：]\s*([0-9\-()]+)/,
-    /(?:0\d{1,4}[-(]?\d{1,4}[-)]?\d{3,4}[-]?\d{4})/,
-  ];
-
-  for (const pattern of phonePatterns) {
-    const match = text.match(pattern);
-    if (match && match[1]) {
-      result.phoneNumber = match[1].trim();
-      break;
-    }
+  const telMatch = text.match(/(?:TEL|Tel|電話)\s*[:：]?\s*([0-9０-９\-ー()（）]{8,})/i);
+  if (telMatch) {
+    result.phoneNumber = telMatch[1]
+      .replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xfee0))
+      .replace(/ー/g, '-')
+      .trim();
   }
 
-  // 携帯電話の抽出
-  const mobilePatterns = [
-    /(?:携帯|MOBILE|CELL)[:：]\s*([0-9\-()]+)/,
-    /(?:0[7-9]0[-(]?\d{4}[-)]?\d{4})/,
-  ];
+  const faxMatch = text.match(/(?:FAX|Fax)\s*[:：]?\s*([0-9０-９\-ー()（）]{8,})/i);
+  if (faxMatch) {
+    result.faxNumber = faxMatch[1]
+      .replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xfee0))
+      .replace(/ー/g, '-')
+      .trim();
+  }
 
-  for (const pattern of mobilePatterns) {
-    const match = text.match(pattern);
-    if (match && match[1]) {
-      result.mobileNumber = match[1].trim();
-      break;
-    }
+  const postalMatch = text.match(/〒?\s*(\d{3}[-ー]\d{4})/);
+  if (postalMatch) {
+    result.postalCode = postalMatch[1].replace(/ー/g, '-');
+  }
+
+  const addressLine = lines.find(line =>
+    /東京都|北海道|(?:京都|大阪)府|.{2,3}県/.test(line)
+  );
+
+  if (addressLine) {
+    result.address = addressLine;
+  }
+
+  const titleLine = lines.find(line =>
+    /(代表取締役|取締役|社長|会長|部長|課長|係長|専務|常務|執行役員|マネージャー)/.test(line)
+  );
+
+  if (titleLine) {
+    result.title = titleLine;
+  }
+
+  const personLine = lines.find(line => {
+    if (line.includes('@')) return false;
+    if (/[0-9０-９]/.test(line)) return false;
+    if (corporateKeywords.some(keyword => line.includes(keyword))) return false;
+    if (/(TEL|FAX|電話|〒|東京都|北海道|府|県|市|区|町|番地)/i.test(line)) return false;
+    if (/(代表取締役|取締役|社長|会長|部長|課長|係長|専務|常務|執行役員)/.test(line)) return false;
+
+    // 日本語氏名っぽい行を拾う
+    return /^[一-龥ぁ-んァ-ヶー\s　]{2,20}$/.test(line);
+  });
+
+  if (personLine) {
+    result.personName = personLine.replace(/\s+/g, ' ').trim();
   }
 
   return result;
@@ -889,27 +1056,23 @@ const tryTesseractBusinessCard = async (
   try {
     const mod: any = await import('tesseract.js');
     const recognize = mod?.recognize ?? mod?.default?.recognize;
+
     if (typeof recognize !== 'function') {
       return null;
     }
+
     const result = await recognize(buildDataUrl(fileBase64, mimeType), 'jpn+eng');
     const text = result?.data?.text ?? '';
+
     if (!text.trim()) {
       return null;
     }
+
     const extracted = extractFromText(text);
-    const lines = text
-      .split(/\r?\n/)
-      .map(line => line.trim())
-      .filter(Boolean);
-    const candidateLines = lines.filter(line => !line.includes('@') && !/[0-9]/.test(line));
-    const companyName = extracted.companyName ?? candidateLines[0] ?? null;
-    const personName = extracted.personName ?? candidateLines[1] ?? null;
+
     return {
       ...fallback,
       ...extracted,
-      companyName,
-      personName,
       notes: `OCR(Tesseract) ${text.trim().substring(0, 120)}...`,
     };
   } catch (error) {
@@ -917,6 +1080,7 @@ const tryTesseractBusinessCard = async (
     return null;
   }
 };
+
 export const extractBusinessCardDetails = async (
   fileBase64: string,
   mimeType: string
@@ -935,18 +1099,58 @@ export const extractBusinessCardDetails = async (
     postalCode: null,
     websiteUrl: null,
     notes: '手動で入力してください',
-    recipientEmployeeCode: null
+    recipientEmployeeCode: null,
   };
 
   try {
     const ai = checkOnlineAndAIOff();
     const filePart = { inlineData: { data: fileBase64, mimeType } };
+
     const instructionPart = {
-      text:
-        "このファイルは日本語の名刺または名刺スキャンPDFです。以下のすべての項目を必ず抽出してください。見つからない場合でもnullではなく空文字で返してください。\n\n必須項目:\n- companyName: 会社名\n- personName: 担当者名\n- department: 部署名\n- title: 役職名\n- phoneNumber: 電話番号\n- faxNumber: FAX番号\n- email: メールアドレス\n- address: 住所\n- websiteUrl: ウェブサイトURL\n\n右上などに赤ペンで手書きされた社員番号があればrecipientEmployeeCodeとして抽出してください。\n\n必ずJSON形式で応答してください。",
+      text: `このファイルは日本語の名刺または名刺スキャンPDFです。
+名刺の内容を読み取り、必ず純粋なJSONのみで返してください。説明文、Markdown、コードフェンスは禁止です。
+
+【最重要ルール】
+1. companyNameには、正式な会社名・法人名だけを入れる。
+2. ロゴ名、ブランド名、キャッチコピー、スローガンはcompanyNameに入れない。
+3. 「共にある、未来へ」「未来へ」「Innovation」「Solution」などのキャッチコピーはnotesに入れる。
+4. 「株式会社」「有限会社」「合同会社」「一般社団法人」「公益財団法人」「学校法人」「医療法人」「協同組合」などを含む行を会社名として最優先する。
+5. personNameには人名だけを入れる。役職名は入れない。
+6. 「代表取締役社長」「取締役」「部長」「課長」「マネージャー」などはtitleに入れる。
+7. 日本語氏名とローマ字氏名が両方ある場合、personNameには日本語氏名を入れる。ローマ字はnotesに入れる。
+8. TELとFAXは必ず分ける。
+9. 郵便番号はpostalCode、住所はaddressに分ける。
+10. 見つからない項目はnullではなく空文字で返す。
+
+【今回のような名刺の判定例】
+- 「TOMOWEL」はロゴ・ブランド名なのでcompanyNameにしない。
+- 「共にある、未来へ」はキャッチコピーなのでcompanyNameにしない。
+- 「共同印刷株式会社」のように株式会社を含む行をcompanyNameにする。
+- 「代表取締役社長」はtitleにする。
+- 「大橋 輝臣」はpersonNameにする。
+- 「Ohashi Teruomi」はnotesに入れる。
+
+【返却JSON形式】
+{
+  "companyName": "",
+  "department": "",
+  "title": "",
+  "personName": "",
+  "personNameKana": "",
+  "email": "",
+  "phoneNumber": "",
+  "mobileNumber": "",
+  "faxNumber": "",
+  "address": "",
+  "postalCode": "",
+  "websiteUrl": "",
+  "notes": "",
+  "recipientEmployeeCode": ""
+}`,
     };
+
     const response = await ai.models.generateContent({
-      model,
+      model: invoiceOcrModel,
       contents: { parts: [filePart, instructionPart] },
       config: {
         responseSchema: businessCardSchema,
@@ -956,53 +1160,62 @@ export const extractBusinessCardDetails = async (
     const rawText = response.text.trim();
     console.log('[extractBusinessCardDetails] AI応答全文:', rawText);
 
-    // コードフェンスを確実に除去
-    let jsonStr = rawText;
-    if (jsonStr.startsWith('```json')) {
-      jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-    } else if (jsonStr.startsWith('```')) {
-      jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
-    }
+    const jsonStr = stripCodeFences(rawText);
 
-    // JSONでない場合の処理 - テキストから情報を抽出
     if (!jsonStr.startsWith('{') && !jsonStr.startsWith('[')) {
       console.warn('[extractBusinessCardDetails] AIがJSON以外を返却、テキスト解析を試行');
 
-      // テキストから情報を抽出する簡易的な処理
       const extracted = extractFromText(rawText);
+
       return {
         ...defaultResult,
-        ...extracted,
-        notes: `AIテキスト解析: ${rawText.substring(0, 100)}...`
+        ...normalizeBusinessCardResult(extracted),
+        notes: `AIテキスト解析: ${rawText.substring(0, 100)}...`,
       };
     }
 
-    let parsed;
     try {
-      parsed = JSON.parse(jsonStr);
+      const parsed = JSON.parse(jsonStr);
+      console.log('[extractBusinessCardDetails] パース結果:', parsed);
+
+      return {
+        ...defaultResult,
+        ...normalizeBusinessCardResult(parsed),
+      };
     } catch (parseError) {
       console.error('[extractBusinessCardDetails] JSONパースエラー:', parseError);
+
       const fallback = await tryTesseractBusinessCard(fileBase64, mimeType, defaultResult);
+
       if (fallback) {
-        return fallback;
+        return {
+          ...defaultResult,
+          ...normalizeBusinessCardResult(fallback),
+        };
       }
+
       return {
         ...defaultResult,
-        notes: `JSONパースエラー: ${parseError instanceof Error ? parseError.message : '不明なエラー'}`
+        notes: `JSONパースエラー: ${
+          parseError instanceof Error ? parseError.message : '不明なエラー'
+        }`,
+      };
+    }
+  } catch (error) {
+    console.error('[extractBusinessCardDetails] エラー:', error);
+
+    const fallback = await tryTesseractBusinessCard(fileBase64, mimeType, defaultResult);
+
+    if (fallback) {
+      return {
+        ...defaultResult,
+        ...normalizeBusinessCardResult(fallback),
       };
     }
 
-    console.log('[extractBusinessCardDetails] パース結果:', parsed);
-    return parsed || defaultResult;
-  } catch (error) {
-    console.error('[extractBusinessCardDetails] エラー:', error);
-    const fallback = await tryTesseractBusinessCard(fileBase64, mimeType, defaultResult);
-    if (fallback) {
-      return fallback;
-    }
     return {
       ...defaultResult,
-      notes: `解析エラー: ${error instanceof Error ? error.message : '不明なエラー'}`
+      notes: `解析エラー: ${error instanceof Error ? error.message : '不明なエラー'}`,
     };
   }
 };
