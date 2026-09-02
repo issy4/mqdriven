@@ -676,9 +676,9 @@ if (draft.ocrStatus === 'ready' && !hasContactCompanyName(draft.contactPayload))
         <div className="border-b border-slate-200 dark:border-slate-700 px-6 py-5 flex flex-col gap-2">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Business Card Import</h3>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">名刺の取り込み</h3>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Upload local files or import from Google Drive to run OCR and create drafts.
+                ローカルファイルのアップロードやGoogleドライブからのインポートを行い、OCR処理とドラフト作成を実行します
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -712,7 +712,7 @@ if (draft.ocrStatus === 'ready' && !hasContactCompanyName(draft.contactPayload))
                 disabled={draftStats.ready === 0 || isBulkConfirming}
                 className={`px-3 py-1.5 rounded-md text-white font-semibold ${draftStats.ready === 0 || isBulkConfirming ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
               >
-                {isBulkConfirming ? 'Confirming...' : `Confirm ${draftStats.ready} ready`}
+                {isBulkConfirming ? 'Confirming...' : `確定 ${draftStats.ready} 準備完了`}
               </button>
             </div>
           )}
@@ -740,7 +740,7 @@ if (draft.ocrStatus === 'ready' && !hasContactCompanyName(draft.contactPayload))
           )}
           <div className="mt-4 grid grid-cols-1 gap-3">
             <div className="grid grid-cols-1 gap-2 text-sm">
-              <label className="font-semibold text-slate-700 dark:text-slate-200">Business Event</label>
+              <label className="font-semibold text-slate-700 dark:text-slate-200">ビジネスイベント</label>
               <input
                 type="text"
                 value={eventName}
@@ -750,7 +750,7 @@ if (draft.ocrStatus === 'ready' && !hasContactCompanyName(draft.contactPayload))
               />
             </div>
             <div className="grid grid-cols-1 gap-2 text-sm">
-              <label className="font-semibold text-slate-700 dark:text-slate-200">Received By</label>
+              <label className="font-semibold text-slate-700 dark:text-slate-200">受領者</label>
               {recipientOptions.length > 0 ? (
                 <select
                   value={recipientCode}
@@ -1002,7 +1002,7 @@ if (draft.ocrStatus === 'ready' && !hasContactCompanyName(draft.contactPayload))
                   </div>
                   {draft.needsManualConfirmation && (
                     <p className="text-xs text-orange-500 mt-3">
-                      OCR could not confirm a company or person. Review the fields and confirm before creating.
+                      OCRで企業名や氏名を特定できませんでした。各項目を確認し、登録前に確定してください。
                     </p>
                   )}
                 </div>
@@ -1017,7 +1017,7 @@ if (draft.ocrStatus === 'ready' && !hasContactCompanyName(draft.contactPayload))
                     }`}
                   >
                     <CheckCircle className="w-4 h-4" />
-                    {draft.insertStatus === 'saving' ? 'Saving...' : 'Confirm & Register Contact'}
+                    {draft.insertStatus === 'saving' ? 'Saving...' : '確認して連絡先を登録'}
                   </button>
                   {draft.insertStatus === 'error' && draft.customerPayload && (
                     <button
@@ -1036,7 +1036,7 @@ if (draft.ocrStatus === 'ready' && !hasContactCompanyName(draft.contactPayload))
                       className="inline-flex items-center gap-2 rounded-md bg-green-600 text-white px-4 py-2 text-sm font-semibold hover:bg-green-700"
                     >
                       <CheckCircle className="w-4 h-4" />
-                      Open in Form
+                      フォームで開く
                     </button>
                   )}
                    {draft.insertStatus === 'saving' && (
