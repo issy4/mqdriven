@@ -1,5 +1,15 @@
 # Codex / Cursor エージェント指示書
 
+## 最新セッション引継ぎ（最優先）
+
+Gemini API安全化・AIゲートウェイ作業では、着手前に以下を読むこと。
+
+1. `docs/HANDOFF_2026-09-04_AI_GATEWAY.md`
+2. `docs/architecture/AI_GATEWAY_REDESIGN.md`
+3. `CLAUDE.md`
+
+Preview検証前に本番へ反映しない。秘密情報を出力しない。既存変更を消さない。
+
 ## プロジェクト概要
 MQDriven ERP。会計まわりは Supabase VIEW ＋ React（Tailwind）で参照中心に寄せている。
 
