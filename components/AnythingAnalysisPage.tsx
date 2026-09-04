@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
 import { User, AnalysisResult, AnalysisHistory } from '../types';
 import { getAnalysisHistory, addAnalysisHistory } from '../services/dataService';
-import { getEnvValue } from '../utils.ts';
-import { GEMINI_API_KEY } from '../src/envShim';
+import { requireGeminiClient } from '../services/Gemini';
 import { Loader, Sparkles, FileText, Link as LinkIcon, Trash2, Copy, History, X } from './Icons';
 
 interface AnythingAnalysisPageProps {
@@ -188,16 +187,7 @@ const AnythingAnalysisPage: React.FC<AnythingAnalysisPageProps> = ({ currentUser
         setResult(null);
 
         try {
-            // Use GEMINI_API_KEY from envShim (already configured for both dev and prod)
-            const apiKey = GEMINI_API_KEY || getEnvValue('GEMINI_API_KEY') || getEnvValue('API_KEY');
-            console.log('AnythingAnalysisPage API Key check:', {
-                fromEnvShim: GEMINI_API_KEY ? '***SET***' : 'NOT SET',
-                fromUtils: apiKey ? '***SET***' : 'NOT SET'
-            });
-            if (!apiKey) {
-                throw new Error('AI APIキーが設定されていません。');
-            }
-            const ai = new GoogleGenAI({ apiKey });
+            const ai = requireGeminiClient();
             
             const contents: any[] = [{ text: `以下のデータセットを分析してください。\n分析の視点: ${viewpoint}` }];
 
@@ -216,7 +206,7 @@ const AnythingAnalysisPage: React.FC<AnythingAnalysisPageProps> = ({ currentUser
             });
 
             const response = await ai.models.generateContent({
-                model: "gemini-2.0-flash-exp",
+                model: "gemini-2.5-flash",
                 contents: { parts: contents },
                 config: {
                     responseMimeType: "application/json",

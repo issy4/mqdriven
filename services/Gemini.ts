@@ -1,6 +1,7 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
 import type { QuoteFormData, QuoteResultData } from '../types';
 import type { TranscriptEntry, SummaryData, MeetingContext } from '../types/meetingAssistant';
+import { geminiProxyClient } from './geminiProxyClient';
 
 const summarizeValue = (value: unknown) => {
   if (!value) return 'missing';
@@ -100,23 +101,6 @@ const aiOffRaw =
 
 export const isGeminiAIDisabled = aiOffRaw === '1' || aiOffRaw.toLowerCase?.() === 'true';
 
-const GEMINI_API_KEY =
-  resolveEnvValue('VITE_GEMINI_API_KEY') ??
-  resolveEnvValue('NEXT_PUBLIC_GEMINI_API_KEY') ??
-  resolveEnvValue('GEMINI_API_KEY') ??
-  resolveEnvValue('API_KEY') ??
-  '';
-
-if (!GEMINI_API_KEY && !isGeminiAIDisabled) {
-  console.error('Gemini APIキーが設定されていません。AI機能を利用するにはAPIキーが必要です。');
-  console.error('チェックした環境変数:');
-  console.error('- VITE_GEMINI_API_KEY:', resolveEnvValue('VITE_GEMINI_API_KEY') ? '***SET***' : 'NOT SET');
-  console.error('- NEXT_PUBLIC_GEMINI_API_KEY:', resolveEnvValue('NEXT_PUBLIC_GEMINI_API_KEY') ? '***SET***' : 'NOT SET');
-  console.error('- GEMINI_API_KEY:', resolveEnvValue('GEMINI_API_KEY') ? '***SET***' : 'NOT SET');
-  console.error('- API_KEY:', resolveEnvValue('API_KEY') ? '***SET***' : 'NOT SET');
-  console.error('- AI_OFF:', aiOffRaw);
-}
-
 export const GEMINI_DEFAULT_MODEL =
   resolveEnvValue('VITE_GEMINI_MODEL') ??
   resolveEnvValue('NEXT_PUBLIC_GEMINI_MODEL') ??
@@ -128,13 +112,11 @@ export const GEMINI_OCR_MODEL =
   resolveEnvValue('GEMINI_OCR_MODEL') ??
   'gemini-3.6-flash';
 
-// Vertex AI endpoints reject API keys, so we default to the standard Google AI endpoint here.
-export const geminiClient = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+// Gemini credentials stay in the authenticated Supabase Edge Function.
+export const geminiClient = isGeminiAIDisabled ? null : geminiProxyClient;
 
-export const requireGeminiClient = (): GoogleGenAI => {
-  if (!geminiClient) {
-    throw new Error('Gemini APIキーが設定されていません。');
-  }
+export const requireGeminiClient = (): any => {
+  if (!geminiClient) throw new Error('AI機能は現在無効です。');
   return geminiClient;
 };
 
@@ -233,7 +215,7 @@ export const transcribeMedia = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash", // より安定したモデルに変更
+      model: GEMINI_DEFAULT_MODEL,
       contents: {
         parts: [
           { inlineData: { data: base64Data, mimeType: cleanMimeType } },
@@ -293,7 +275,7 @@ export const generateSummary = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash", // より安定したモデルに変更
+      model: GEMINI_DEFAULT_MODEL,
       contents: {
         parts: [{
           text: `以下の文字起こしから、決定事項とネクストアクションを抽出したビジネス議事録を作成してください。
