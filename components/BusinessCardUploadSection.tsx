@@ -243,19 +243,29 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
   }, [currentUser?.id]);
 
   const recipientOptions = useMemo(() => {
-    const sorted = [...allUsers].sort((a, b) => {
-      const na = a.name?.toLowerCase() || '';
-      const nb = b.name?.toLowerCase() || '';
+  const activeUsers = allUsers.filter(user => {
+    const anyUser = user as any;
 
-      return na.localeCompare(nb);
-    });
+    return (
+      anyUser.isActive === true ||
+      anyUser.is_active === true ||
+      anyUser.active === true
+    );
+  });
 
-    return sorted.map(user => ({
-      value: user.id,
-      label: user.name || user.email || user.id,
-      department: user.department || '',
-    }));
-  }, [allUsers]);
+  const sorted = [...activeUsers].sort((a, b) => {
+    const na = a.name?.toLowerCase() || '';
+    const nb = b.name?.toLowerCase() || '';
+
+    return na.localeCompare(nb);
+  });
+
+  return sorted.map(user => ({
+    value: user.id,
+    label: user.name || user.email || user.id,
+    department: user.department || '',
+  }));
+}, [allUsers]);
 
   const formatRecipientLabel = (code?: string | null) => {
     if (!code) return '-';
