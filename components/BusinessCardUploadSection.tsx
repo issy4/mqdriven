@@ -567,27 +567,75 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
   );
 
   const handleDriveModalOpen = async () => {
-    if (isAIOff) {
-      addToast('AIがOFFのため、Google DriveからのOCR取込は利用できません。', 'info');
-      return;
+  if (isAIOff) {
+    addToast('AIがOFFのため、Google DriveからのOCR取込は利用できません。', 'info');
+    return;
+  }
+
+  setShowDriveModal(true);
+  setDriveError('');
+  setIsDriveLoading(true);
+
+  try {
+    const searchKeywords = [
+      '名刺',
+      'meishi',
+      'business card',
+      'card',
+      'pdf',
+      'jpg',
+      'jpeg',
+      'png',
+    ];
+
+    const allFiles: GoogleDriveFile[] = [];
+
+    for (const keyword of searchKeywords) {
+      try {
+        const { files } = await googleDriveService.searchFiles(keyword);
+
+        if (files && files.length > 0) {
+          allFiles.push(...files);
+        }
+      } catch (searchError) {
+        console.warn(`Google Drive search failed: ${keyword}`, searchError);
+      }
     }
 
-    setShowDriveModal(true);
-    setDriveError('');
-    setIsDriveLoading(true);
+    const uniqueFiles = Array.from(
+      new Map(allFiles.map(file => [file.id, file])).values()
+    );
 
-    try {
-      const { files } = await googleDriveService.searchFiles('business card');
+    const supportedFiles = uniqueFiles.filter(file => {
+      const name = file.name.toLowerCase();
+      const mimeType = file.mimeType || '';
 
-      setDriveFiles(files || []);
-      setSelectedDriveFiles([]);
-    } catch (err) {
-      console.error('Failed to load business card files from Drive', err);
-      setDriveError('Google Driveのファイル取得に失敗しました。もう一度お試しください。');
-    } finally {
-      setIsDriveLoading(false);
+      return (
+        mimeType.startsWith('image/') ||
+        mimeType === 'application/pdf' ||
+        name.endsWith('.pdf') ||
+        name.endsWith('.jpg') ||
+        name.endsWith('.jpeg') ||
+        name.endsWith('.png') ||
+        name.endsWith('.webp')
+      );
+    });
+
+    setDriveFiles(supportedFiles);
+    setSelectedDriveFiles([]);
+
+    if (supportedFiles.length === 0) {
+      setDriveError(
+        'Google Drive内に名刺候補ファイルが見つかりませんでした。ファイル名に「名刺」または「business card」を含めると見つけやすくなります。'
+      );
     }
-  };
+  } catch (err) {
+    console.error('Failed to load business card files from Drive', err);
+    setDriveError('Google Driveのファイル取得に失敗しました。もう一度お試しください。');
+  } finally {
+    setIsDriveLoading(false);
+  }
+};
 
   const closeDriveModal = () => {
     setShowDriveModal(false);
