@@ -6476,6 +6476,64 @@ export const createCustomerContact = async (
   };
 };
 
+export const getCustomerContacts = async (): Promise<CustomerContact[]> => {
+  const supabase = getSupabase();
+
+  const { data, error } = await supabase
+    .from('customer_contacts')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Failed to fetch customer contacts:', error);
+    throw new Error(
+      `名刺連絡先の取得に失敗しました。${error.message ? ` ${error.message}` : ''}`
+    );
+  }
+
+  return (data || []).map(row => ({
+    id: row.id,
+    originalCustomerId: row.original_customer_id,
+    customerId: row.customer_id,
+
+    companyName: row.company_name,
+    companyNameKana: row.company_name_kana,
+    customerCode: row.customer_code,
+
+    personName: row.person_name,
+    personNameKana: row.person_name_kana,
+    personTitle: row.person_title,
+    department: row.department,
+
+    email: row.email,
+    phoneNumber: row.phone_number,
+    mobileNumber: row.mobile_number,
+    faxNumber: row.fax_number,
+
+    postalCode: row.postal_code,
+    address1: row.address_1,
+    address2: row.address_2,
+    websiteUrl: row.website_url,
+
+    businessEvent: row.business_event,
+    receivedByEmployeeCode: row.received_by_employee_code,
+    source: row.source,
+
+    allowEmailMarketing: row.allow_email_marketing,
+    emailMarketingStatus: row.email_marketing_status,
+
+    followStatus: row.follow_status,
+    lastContactedAt: row.last_contacted_at,
+    nextActionDate: row.next_action_date,
+    nextActionNote: row.next_action_note,
+
+    memo: row.memo,
+
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+};
+
 // =====================================================================
 // 受注台帳・目標管理 (Order Ledger / Sales Target Management)
 // =====================================================================

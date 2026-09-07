@@ -227,6 +227,11 @@ export interface CustomerContact {
 
   createdAt?: string | null;
   updatedAt?: string | null;
+
+  followStatus?: string | null;
+  lastContactedAt?: string | null;
+  nextActionDate?: string | null;
+  nextActionNote?: string | null;
 }
 
 export interface CustomerRank extends LooseRecord {
