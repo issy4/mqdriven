@@ -7104,29 +7104,12 @@ export const searchCustomerLinkCandidates = async (
     return [];
   }
 
-  const { data, error } = await supabase
-    .from('customers')
-    .select(`
-      id,
-      customer_code,
-      customer_name,
-      customer_name_kana,
-      phone_number,
-      address_1,
-      post_no,
-      zip_code
-    `)
-    .not('customer_code', 'is', null)
-    .or(
-      [
-        `customer_name.ilike.%${q}%`,
-        `customer_name_kana.ilike.%${q}%`,
-        `customer_code.ilike.%${q}%`,
-        `phone_number.ilike.%${q}%`,
-      ].join(',')
-    )
-    .order('customer_name', { ascending: true })
-    .limit(20);
+  const { data, error } = await supabase.rpc(
+    'search_customer_link_candidates',
+    {
+      p_keyword: q,
+    }
+  );
 
   if (error) {
     console.error('Failed to search customer link candidates:', error);
