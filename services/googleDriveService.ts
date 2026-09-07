@@ -179,8 +179,12 @@ class GoogleDriveService {
     }
 
     if (ArrayBuffer.isView(content)) {
-      return { data: content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength), fileName };
-    }
+  const view = content as Uint8Array;
+  const bytes = new Uint8Array(view.byteLength);
+  bytes.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+
+  return { data: bytes.buffer, fileName };
+}
 
     if (typeof content === 'string') {
       return { data: this.decodeBase64(content), fileName };
