@@ -786,6 +786,7 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
                 ファイルを選択
               </button>
 
+              {/*
               <button
                 type="button"
                 onClick={handleDriveModalOpen}
@@ -794,6 +795,7 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
               >
                 Google Drive
               </button>
+              */}
             </div>
           </div>
 
