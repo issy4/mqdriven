@@ -1,8 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CustomerContact, EmployeeUser, Toast } from '../../types';
+import {
+  CustomerContact,
+  CustomerLinkCandidate,
+  EmployeeUser,
+  Toast,
+} from '../../types';
 import {
   createCustomerContact,
   getCustomerContacts,
+  searchCustomerLinkCandidates,
   updateCustomerContact,
 } from '../../services/dataService';
 import BusinessCardUploadSection from '../BusinessCardUploadSection';
@@ -81,6 +87,13 @@ const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
   const [editForm, setEditForm] = useState<Partial<CustomerContact>>({});
   const [isSaving, setIsSaving] = useState(false);
 
+  const [linkSearchKeyword, setLinkSearchKeyword] = useState('');
+  const [customerCandidates, setCustomerCandidates] = useState<
+    CustomerLinkCandidate[]
+  >([]);
+  const [isSearchingCandidates, setIsSearchingCandidates] = useState(false);
+  const [candidateSearchError, setCandidateSearchError] = useState('');
+
   const loadContacts = useCallback(async () => {
     setIsLoading(true);
     setLoadError('');
@@ -116,17 +129,23 @@ const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
   const openEditModal = (contact: CustomerContact) => {
     setEditingContact(contact);
     setEditForm({
+      customerId: contact.customerId ?? null,
+      customerCode: contact.customerCode ?? null,
+
       companyName: contact.companyName ?? '',
       personName: contact.personName ?? '',
       personTitle: contact.personTitle ?? '',
       department: contact.department ?? '',
+
       email: contact.email ?? '',
       phoneNumber: contact.phoneNumber ?? '',
       mobileNumber: contact.mobileNumber ?? '',
       faxNumber: contact.faxNumber ?? '',
+
       postalCode: contact.postalCode ?? '',
       address1: contact.address1 ?? '',
       websiteUrl: contact.websiteUrl ?? '',
+
       businessEvent: contact.businessEvent ?? '',
       receivedByEmployeeCode: contact.receivedByEmployeeCode ?? '',
       followStatus: contact.followStatus ?? '未対応',
@@ -134,15 +153,24 @@ const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
       nextActionDate: contact.nextActionDate ?? '',
       nextActionNote: contact.nextActionNote ?? '',
       memo: contact.memo ?? '',
+
       allowEmailMarketing: contact.allowEmailMarketing ?? true,
       emailMarketingStatus: contact.emailMarketingStatus ?? '未確認',
     });
+
+    setLinkSearchKeyword(contact.companyName ?? '');
+    setCustomerCandidates([]);
+    setCandidateSearchError('');
   };
 
   const closeEditModal = () => {
     if (isSaving) return;
+
     setEditingContact(null);
     setEditForm({});
+    setLinkSearchKeyword('');
+    setCustomerCandidates([]);
+    setCandidateSearchError('');
   };
 
   const handleEditChange = (
@@ -153,6 +181,57 @@ const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
       ...prev,
       [key]: value,
     }));
+  };
+
+  const handleSearchCustomerCandidates = async () => {
+    const q = linkSearchKeyword.trim() || String(editForm.companyName ?? '').trim();
+
+    if (!q) {
+      addToast('検索キーワードを入力してください。', 'error');
+      return;
+    }
+
+    setIsSearchingCandidates(true);
+    setCandidateSearchError('');
+
+    try {
+      const rows = await searchCustomerLinkCandidates(q);
+      setCustomerCandidates(rows);
+
+      if (rows.length === 0) {
+        addToast('正式顧客候補が見つかりませんでした。', 'info');
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : '正式顧客候補の検索に失敗しました。';
+
+      setCandidateSearchError(message);
+      addToast(message, 'error');
+    } finally {
+      setIsSearchingCandidates(false);
+    }
+  };
+
+  const handleSelectCandidate = (candidate: CustomerLinkCandidate) => {
+    setEditForm(prev => ({
+      ...prev,
+      customerId: candidate.id,
+      customerCode: candidate.customerCode ?? null,
+    }));
+
+    addToast('正式顧客候補を選択しました。保存すると紐づけされます。', 'success');
+  };
+
+  const handleUnlinkCustomer = () => {
+    setEditForm(prev => ({
+      ...prev,
+      customerId: null,
+      customerCode: null,
+    }));
+
+    addToast('顧客紐づけを解除しました。保存すると反映されます。', 'info');
   };
 
   const handleSaveEdit = async () => {
@@ -168,6 +247,9 @@ const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
 
     try {
       const updated = await updateCustomerContact(editingContact.id, {
+        customerId: editForm.customerId ?? null,
+        customerCode: editForm.customerCode ?? null,
+
         companyName,
         personName: emptyToNull(String(editForm.personName ?? '')),
         personTitle: emptyToNull(String(editForm.personTitle ?? '')),
@@ -205,6 +287,9 @@ const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
       addToast('名刺連絡先を更新しました。', 'success');
       setEditingContact(null);
       setEditForm({});
+      setLinkSearchKeyword('');
+      setCustomerCandidates([]);
+      setCandidateSearchError('');
     } catch (error) {
       const message =
         error instanceof Error
@@ -240,6 +325,7 @@ const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
       if (q) {
         const target = [
           contact.companyName,
+          contact.customerCode,
           contact.personName,
           contact.personTitle,
           contact.department,
@@ -303,6 +389,24 @@ const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
       needsFollow,
     };
   }, [contacts]);
+
+  const selectedCustomerLabel = useMemo(() => {
+    if (!editForm.customerId) return '未紐づけ';
+
+    const candidate = customerCandidates.find(
+      item => item.id === editForm.customerId
+    );
+
+    if (candidate) {
+      return `${candidate.customerCode ?? 'コードなし'} / ${candidate.companyName}`;
+    }
+
+    if (editForm.customerCode) {
+      return `${editForm.customerCode} / 紐づけ済み`;
+    }
+
+    return '紐づけ済み';
+  }, [editForm.customerId, editForm.customerCode, customerCandidates]);
 
   return (
     <div className="space-y-6">
@@ -627,6 +731,122 @@ const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
             </div>
 
             <div className="space-y-6 px-6 py-5">
+              <section className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-900/50 dark:bg-blue-950/20">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                      正式顧客マスターとの紐づけ
+                    </h4>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      customers の正式顧客を検索し、この名刺連絡先に紐づけます。
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      現在：{selectedCustomerLabel}
+                    </p>
+                  </div>
+
+                  {editForm.customerId && (
+                    <button
+                      type="button"
+                      onClick={handleUnlinkCustomer}
+                      className="rounded-lg border border-orange-300 bg-white px-3 py-2 text-xs font-semibold text-orange-700 hover:bg-orange-50"
+                    >
+                      紐づけ解除
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-4 flex flex-col gap-2 md:flex-row">
+                  <div className="relative flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={linkSearchKeyword}
+                      onChange={e => setLinkSearchKeyword(e.target.value)}
+                      placeholder="正式顧客名・顧客コード・電話番号で検索"
+                      className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleSearchCustomerCandidates()}
+                    disabled={isSearchingCandidates}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSearchingCandidates && (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    )}
+                    候補検索
+                  </button>
+                </div>
+
+                {candidateSearchError && (
+                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    <AlertTriangle className="h-4 w-4" />
+                    {candidateSearchError}
+                  </div>
+                )}
+
+                {customerCandidates.length > 0 && (
+                  <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+                    <div className="border-b border-slate-200 px-4 py-2 text-xs font-semibold text-slate-500 dark:border-slate-700">
+                      候補 {customerCandidates.length} 件
+                    </div>
+
+                    <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-700">
+                      {customerCandidates.map(candidate => {
+                        const selected = editForm.customerId === candidate.id;
+
+                        return (
+                          <div
+                            key={candidate.id}
+                            className={`flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between ${
+                              selected
+                                ? 'bg-emerald-50 dark:bg-emerald-950/20'
+                                : ''
+                            }`}
+                          >
+                            <div>
+                              <p className="font-semibold text-slate-900 dark:text-white">
+                                {candidate.companyName}
+                              </p>
+
+                              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                                <span>
+                                  顧客コード：{candidate.customerCode || '-'}
+                                </span>
+                                <span>
+                                  TEL：{candidate.phoneNumber || '-'}
+                                </span>
+                              </div>
+
+                              {candidate.address1 && (
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {candidate.address1}
+                                </p>
+                              )}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleSelectCandidate(candidate)}
+                              className={`rounded-lg px-3 py-2 text-xs font-semibold ${
+                                selected
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100'
+                              }`}
+                            >
+                              {selected ? '選択中' : 'この顧客に紐づけ'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </section>
+
               <section>
                 <h4 className="mb-3 text-sm font-bold text-slate-700 dark:text-slate-200">
                   基本情報
@@ -638,6 +858,13 @@ const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
                     required
                     value={String(editForm.companyName ?? '')}
                     onChange={value => handleEditChange('companyName', value)}
+                  />
+
+                  <FormInput
+                    label="顧客コード"
+                    value={String(editForm.customerCode ?? '')}
+                    onChange={value => handleEditChange('customerCode', value)}
+                    placeholder="正式顧客と紐づけると自動で入ります"
                   />
 
                   <FormInput

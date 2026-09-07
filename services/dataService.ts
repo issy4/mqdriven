@@ -2,7 +2,7 @@ import { getSupabase, getSupabaseFunctionHeaders } from './supabaseClient';
 import { sendApprovalNotification, sendApprovalRouteCreatedNotification } from './notificationService';
 import { enrichCustomerData } from './geminiService';
 import { createClient } from '@supabase/supabase-js';
-import { CustomerContact } from '../types';
+import { CustomerContact, CustomerLinkCandidate } from '../types';
 import type { SupabaseClient as SupabaseClientType } from '@supabase/supabase-js';
 import type { PostgrestError } from '@supabase/supabase-js';
 import { validateKatakana } from '../utils/katakanaValidation';
@@ -7091,4 +7091,56 @@ export const updateCustomerContact = async (
     createdAt: data.created_at,
     updatedAt: data.updated_at,
   };
+};
+
+export const searchCustomerLinkCandidates = async (
+  keyword: string
+): Promise<CustomerLinkCandidate[]> => {
+  const supabase = getSupabase();
+
+  const q = keyword.trim();
+
+  if (!q) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('customers')
+    .select(`
+      id,
+      customer_code,
+      customer_name,
+      customer_name_kana,
+      phone_number,
+      address_1,
+      post_no,
+      zip_code
+    `)
+    .not('customer_code', 'is', null)
+    .or(
+      [
+        `customer_name.ilike.%${q}%`,
+        `customer_name_kana.ilike.%${q}%`,
+        `customer_code.ilike.%${q}%`,
+        `phone_number.ilike.%${q}%`,
+      ].join(',')
+    )
+    .order('customer_name', { ascending: true })
+    .limit(20);
+
+  if (error) {
+    console.error('Failed to search customer link candidates:', error);
+    throw new Error(
+      `正式顧客候補の検索に失敗しました。${error.message ? ` ${error.message}` : ''}`
+    );
+  }
+
+  return (data || []).map(row => ({
+    id: row.id,
+    customerCode: row.customer_code,
+    companyName: row.customer_name,
+    companyNameKana: row.customer_name_kana,
+    phoneNumber: row.phone_number,
+    address1: row.address_1,
+  }));
 };
