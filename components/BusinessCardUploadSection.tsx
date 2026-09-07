@@ -577,61 +577,25 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
   setIsDriveLoading(true);
 
   try {
-    const searchKeywords = [
-      '名刺',
-      'meishi',
-      'business card',
-      'card',
-      'pdf',
-      'jpg',
-      'jpeg',
-      'png',
-    ];
+    const { files } = await googleDriveService.searchBusinessCardFiles();
 
-    const allFiles: GoogleDriveFile[] = [];
-
-    for (const keyword of searchKeywords) {
-      try {
-        const { files } = await googleDriveService.searchFiles(keyword);
-
-        if (files && files.length > 0) {
-          allFiles.push(...files);
-        }
-      } catch (searchError) {
-        console.warn(`Google Drive search failed: ${keyword}`, searchError);
-      }
-    }
-
-    const uniqueFiles = Array.from(
-      new Map(allFiles.map(file => [file.id, file])).values()
-    );
-
-    const supportedFiles = uniqueFiles.filter(file => {
-      const name = file.name.toLowerCase();
-      const mimeType = file.mimeType || '';
-
-      return (
-        mimeType.startsWith('image/') ||
-        mimeType === 'application/pdf' ||
-        name.endsWith('.pdf') ||
-        name.endsWith('.jpg') ||
-        name.endsWith('.jpeg') ||
-        name.endsWith('.png') ||
-        name.endsWith('.webp')
-      );
-    });
-
-    setDriveFiles(supportedFiles);
+    setDriveFiles(files || []);
     setSelectedDriveFiles([]);
 
-    if (supportedFiles.length === 0) {
+    if (!files || files.length === 0) {
       setDriveError(
-        'Google Drive内に名刺候補ファイルが見つかりませんでした。ファイル名に「名刺」または「business card」を含めると見つけやすくなります。'
+        'Google Driveの「名刺OCR取込」フォルダ内にPDFまたは画像ファイルが見つかりませんでした。'
       );
     }
   } catch (err) {
-    console.error('Failed to load business card files from Drive', err);
-    setDriveError('Google Driveのファイル取得に失敗しました。もう一度お試しください。');
+    console.error('Failed to load business card files from Drive folder', err);
+
+    const message =
+      err instanceof Error
+        ? err.message
+        : 'Google Driveの名刺取込フォルダの取得に失敗しました。';
+
+    setDriveError(message);
   } finally {
     setIsDriveLoading(false);
   }
