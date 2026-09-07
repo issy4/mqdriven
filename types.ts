@@ -234,6 +234,15 @@ export interface CustomerContact {
   nextActionNote?: string | null;
 }
 
+export interface CustomerLinkCandidate {
+  id: string;
+  customerCode?: string | null;
+  companyName: string;
+  companyNameKana?: string | null;
+  phoneNumber?: string | null;
+  address1?: string | null;
+}
+
 export interface CustomerRank extends LooseRecord {
   id: string; // 'S', 'A', 'B', etc.
   name: string;
