@@ -720,7 +720,7 @@ const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <FormInput
                     label="取得イベント"
-                    placeholder="例：クルーズEXPO 2026、紹介、商談会"
+                    placeholder="例：産業交流展、紹介、会社訪問"
                     value={String(editForm.businessEvent ?? '')}
                     onChange={value => handleEditChange('businessEvent', value)}
                   />
