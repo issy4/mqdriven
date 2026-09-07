@@ -1,6 +1,13 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BusinessCardContact, CustomerContact, EmployeeUser, Toast } from '../types';
+import {
+  BusinessCardContact,
+  CustomerContact,
+  CustomerLinkCandidate,
+  EmployeeUser,
+  Toast,
+} from '../types';
 import { extractBusinessCardDetails } from '../services/geminiService';
+import { findAutoLinkCustomerCandidate } from '../services/dataService';
 import { googleDriveService, GoogleDriveFile } from '../services/googleDriveService';
 import { Upload, Loader, CheckCircle, AlertTriangle, Trash2, FileText, RefreshCw, X } from './Icons';
 import { buildActionActorInfo, logActionEvent } from '../services/actionConsoleService';
@@ -15,6 +22,7 @@ interface BusinessCardUploadSectionProps {
 
 type OcrStatus = 'processing' | 'ready' | 'error';
 type InsertStatus = 'idle' | 'saving' | 'success' | 'error';
+type AutoLinkStatus = 'idle' | 'searching' | 'linked' | 'not_found' | 'skipped';
 
 type CardDraft = {
   id: string;
@@ -30,6 +38,8 @@ type CardDraft = {
   ocrError?: string;
   insertError?: string;
   needsManualConfirmation?: boolean;
+  autoLinkStatus?: AutoLinkStatus;
+  autoLinkedCustomer?: CustomerLinkCandidate | null;
 };
 
 const readFileAsBase64 = (file: File): Promise<string> =>
@@ -277,91 +287,152 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
   }, []);
 
   const autoCreateCustomerContact = useCallback(
-    async (draftId: string, contactPayload: Partial<CustomerContact>) => {
-      if (!hasContactCompanyName(contactPayload)) {
-        const message = '会社名または氏名を入力してから登録してください。';
-
-        setDrafts(prev =>
-          prev.map(draft =>
-            draft.id === draftId
-              ? { ...draft, insertStatus: 'error', insertError: message }
-              : draft
-          )
-        );
-
-        addToast(message, 'error');
-        return;
-      }
+  async (draftId: string, contactPayload: Partial<CustomerContact>) => {
+    if (!hasContactCompanyName(contactPayload)) {
+      const message = '会社名または氏名を入力してから登録してください。';
 
       setDrafts(prev =>
         prev.map(draft =>
           draft.id === draftId
-            ? { ...draft, insertStatus: 'saving', insertError: undefined }
+            ? { ...draft, insertStatus: 'error', insertError: message }
             : draft
         )
       );
 
-      try {
-        const created = await onAutoCreateCustomerContact(contactPayload);
+      addToast(message, 'error');
+      return;
+    }
 
-        setDrafts(prev =>
-          prev.map(draft =>
-            draft.id === draftId
-              ? {
-                  ...draft,
-                  insertStatus: 'success',
-                  createdContact: created,
-                  contactPayload: { ...contactPayload, id: created.id },
-                }
-              : draft
-          )
-        );
+    setDrafts(prev =>
+      prev.map(draft =>
+        draft.id === draftId
+          ? {
+              ...draft,
+              insertStatus: 'saving',
+              insertError: undefined,
+              autoLinkStatus: 'searching',
+              autoLinkedCustomer: null,
+            }
+          : draft
+      )
+    );
 
+    try {
+      let payload: Partial<CustomerContact> = {
+        ...contactPayload,
+      };
+
+      const companyName = sanitizeCustomerName(payload.companyName);
+
+      let autoCandidate: CustomerLinkCandidate | null = null;
+
+      if (companyName) {
+        autoCandidate = await findAutoLinkCustomerCandidate(companyName);
+      }
+
+      if (autoCandidate) {
+        const linkMemo = `正式顧客に自動紐づけ: ${
+          autoCandidate.customerCode || 'コードなし'
+        } / ${autoCandidate.companyName}`;
+
+        payload = {
+          ...payload,
+          customerId: autoCandidate.id,
+          customerCode: autoCandidate.customerCode ?? null,
+          memo: payload.memo
+            ? `${payload.memo}\n${linkMemo}`
+            : linkMemo,
+        };
+      }
+
+      const created = await onAutoCreateCustomerContact(payload);
+
+      setDrafts(prev =>
+        prev.map(draft =>
+          draft.id === draftId
+            ? {
+                ...draft,
+                insertStatus: 'success',
+                createdContact: created,
+                contactPayload: {
+                  ...payload,
+                  id: created.id,
+                },
+                autoLinkStatus: autoCandidate ? 'linked' : 'not_found',
+                autoLinkedCustomer: autoCandidate,
+              }
+            : draft
+        )
+      );
+
+      if (autoCandidate) {
         addToast(
-          `連絡先「${created.companyName || contactPayload.companyName || '名刺'}」を登録しました。`,
+          `連絡先「${
+            created.companyName || payload.companyName || '名刺'
+          }」を登録し、正式顧客「${autoCandidate.companyName}」に自動紐づけしました。`,
           'success'
         );
-
-        logActionEvent({
-          module: 'BusinessCard OCR',
-          severity: 'info',
-          status: 'success',
-          summary: `BusinessCard OCR: ${
-            created.companyName || contactPayload.companyName || 'Unknown'
-          } contact registered`,
-          detail: `Contact: ${describeRepresentative(
-            created.personName ?? contactPayload.personName,
-            created.personTitle ?? contactPayload.personTitle
-          )}`,
-          ...actorInfo,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : '連絡先の登録に失敗しました。';
-
-        setDrafts(prev =>
-          prev.map(draft =>
-            draft.id === draftId
-              ? { ...draft, insertStatus: 'error', insertError: message }
-              : draft
-          )
+      } else {
+        addToast(
+          `連絡先「${
+            created.companyName || payload.companyName || '名刺'
+          }」を登録しました。正式顧客候補が1件に確定しなかったため、未紐づけで登録しました。`,
+          'success'
         );
-
-        addToast(message, 'error');
-
-        logActionEvent({
-          module: 'BusinessCard OCR',
-          severity: 'critical',
-          status: 'failure',
-          summary: `BusinessCard OCR: ${
-            contactPayload.companyName || 'Unknown'
-          } contact registration failed`,
-          detail: message,
-          ...actorInfo,
-        });
       }
-    },
-    [onAutoCreateCustomerContact, addToast, actorInfo]
-  );
+
+      logActionEvent({
+        module: 'BusinessCard OCR',
+        severity: 'info',
+        status: 'success',
+        summary: `BusinessCard OCR: ${
+          created.companyName || payload.companyName || 'Unknown'
+        } contact registered`,
+        detail: autoCandidate
+          ? `Contact: ${describeRepresentative(
+              created.personName ?? payload.personName,
+              created.personTitle ?? payload.personTitle
+            )}\nAuto linked customer: ${
+              autoCandidate.customerCode || 'コードなし'
+            } / ${autoCandidate.companyName}`
+          : `Contact: ${describeRepresentative(
+              created.personName ?? payload.personName,
+              created.personTitle ?? payload.personTitle
+            )}`,
+        ...actorInfo,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '連絡先の登録に失敗しました。';
+
+      setDrafts(prev =>
+        prev.map(draft =>
+          draft.id === draftId
+            ? {
+                ...draft,
+                insertStatus: 'error',
+                insertError: message,
+                autoLinkStatus: 'skipped',
+              }
+            : draft
+        )
+      );
+
+      addToast(message, 'error');
+
+      logActionEvent({
+        module: 'BusinessCard OCR',
+        severity: 'critical',
+        status: 'failure',
+        summary: `BusinessCard OCR: ${
+          contactPayload.companyName || 'Unknown'
+        } contact registration failed`,
+        detail: message,
+        ...actorInfo,
+      });
+    }
+  },
+  [onAutoCreateCustomerContact, addToast, actorInfo]
+);
 
   const runOcr = useCallback(
     async (draftId: string, file: File) => {
@@ -449,15 +520,17 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
       const previewUrl = URL.createObjectURL(file);
 
       const draft: CardDraft = {
-        id,
-        file,
-        fileName: file.name,
-        fileUrl: previewUrl,
-        mimeType: file.type || 'application/octet-stream',
-        ocrStatus: 'processing',
-        insertStatus: 'idle',
-        contact: {},
-      };
+  id,
+  file,
+  fileName: file.name,
+  fileUrl: previewUrl,
+  mimeType: file.type || 'application/octet-stream',
+  ocrStatus: 'processing',
+  insertStatus: 'idle',
+  autoLinkStatus: 'idle',
+  autoLinkedCustomer: null,
+  contact: {},
+};
 
       setDrafts(prev => [...prev, draft]);
       runOcr(id, file);
@@ -896,6 +969,29 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
                             {insertStatus.label}
                           </span>
 
+                          {draft.autoLinkStatus && draft.autoLinkStatus !== 'idle' && (
+  <span
+    className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold ${
+      draft.autoLinkStatus === 'linked'
+        ? 'bg-emerald-100 text-emerald-700'
+        : draft.autoLinkStatus === 'searching'
+          ? 'bg-blue-100 text-blue-700'
+          : draft.autoLinkStatus === 'not_found'
+            ? 'bg-orange-100 text-orange-700'
+            : 'bg-slate-100 text-slate-600'
+    }`}
+  >
+    顧客紐づけ：
+    {draft.autoLinkStatus === 'linked'
+      ? '自動紐づけ'
+      : draft.autoLinkStatus === 'searching'
+        ? '検索中'
+        : draft.autoLinkStatus === 'not_found'
+          ? '未紐づけ'
+          : 'スキップ'}
+  </span>
+)}
+
                           {draft.needsManualConfirmation && (
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold bg-orange-100 text-orange-700">
                               要確認
@@ -986,6 +1082,16 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
                           {formatRecipientLabel(draft.contactPayload?.receivedByEmployeeCode)}
                         </dd>
                       </div>
+
+                      {draft.autoLinkedCustomer && (
+  <div>
+    <dt className="text-xs font-semibold text-slate-500">自動紐づけ先</dt>
+    <dd className="font-medium text-emerald-700">
+      {draft.autoLinkedCustomer.customerCode || 'コードなし'} /{' '}
+      {draft.autoLinkedCustomer.companyName}
+    </dd>
+  </div>
+)}
                     </dl>
                   </div>
 
