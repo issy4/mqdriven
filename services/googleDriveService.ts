@@ -284,6 +284,49 @@ class GoogleDriveService {
       this.isPdfFile(file) || this.isImageFile(file) || this.isExcelFile(file)
     );
   }
+
+    /** 名刺OCR用：PDF・画像ファイルを対象とする */
+  filterBusinessCardFiles(files: GoogleDriveFile[]): GoogleDriveFile[] {
+    return files.filter(file =>
+      this.isPdfFile(file) || this.isImageFile(file)
+    );
+  }
+
+  /** Google Drive内の「名刺OCR取込」フォルダを探す */
+  async findBusinessCardFolder(): Promise<GoogleDriveFile | null> {
+    const folderName = '名刺OCR取込';
+
+    const result = await this.searchFiles(folderName);
+
+    const folder = result.files.find(file =>
+      file.name === folderName &&
+      file.mimeType === 'application/vnd.google-apps.folder'
+    );
+
+    return folder ?? null;
+  }
+
+  /** 「名刺OCR取込」フォルダ内の名刺ファイルを取得 */
+  async searchBusinessCardFiles(): Promise<GoogleDriveSearchResult> {
+    const folder = await this.findBusinessCardFolder();
+
+    if (!folder) {
+      throw new Error('Google Driveに「名刺OCR取込」フォルダが見つかりません。');
+    }
+
+    /**
+     * MCP側の検索ツールがGoogle Driveのq構文に対応している場合、
+     * この検索でフォルダ内ファイルを取得します。
+     */
+    const folderQuery = `'${folder.id}' in parents and trashed = false`;
+
+    const result = await this.searchFiles(folderQuery);
+
+    return {
+      files: this.filterBusinessCardFiles(result.files),
+      nextPageToken: result.nextPageToken,
+    };
+  }
 }
 
 export const googleDriveService = new GoogleDriveService();
