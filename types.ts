@@ -241,6 +241,8 @@ export interface CustomerLinkCandidate {
   companyNameKana?: string | null;
   phoneNumber?: string | null;
   address1?: string | null;
+  matchType?: string | null;
+  matchScore?: number | null;
 }
 
 export interface CustomerRank extends LooseRecord {

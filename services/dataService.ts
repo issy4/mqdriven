@@ -7127,3 +7127,47 @@ export const searchCustomerLinkCandidates = async (
     address1: row.address_1,
   }));
 };
+
+export const findAutoLinkCustomerCandidate = async (
+  companyName: string
+): Promise<CustomerLinkCandidate | null> => {
+  const supabase = getSupabase();
+
+  const q = companyName.trim();
+
+  if (!q) {
+    return null;
+  }
+
+  const { data, error } = await supabase.rpc(
+    'find_auto_link_customer_candidate',
+    {
+      p_company_name: q,
+    }
+  );
+
+  if (error) {
+    console.error('Failed to find auto link customer candidate:', error);
+    return null;
+  }
+
+  const rows = data || [];
+
+  // 高確度候補が1件だけなら自動紐づけ
+  if (rows.length !== 1) {
+    return null;
+  }
+
+  const row = rows[0];
+
+  return {
+    id: row.id,
+    customerCode: row.customer_code,
+    companyName: row.customer_name,
+    companyNameKana: row.customer_name_kana,
+    phoneNumber: row.phone_number,
+    address1: row.address_1,
+    matchType: row.match_type,
+    matchScore: row.match_score,
+  };
+};
