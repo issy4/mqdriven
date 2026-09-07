@@ -6988,3 +6988,107 @@ export const saveSalesAnnualTarget = async (params: {
 
   ensureSupabaseSuccess(error, 'Failed to save sales annual target');
 };
+
+export const updateCustomerContact = async (
+  id: string,
+  contact: Partial<CustomerContact>
+): Promise<CustomerContact> => {
+  const supabase = getSupabase();
+
+  const payload = {
+    company_name: contact.companyName,
+    company_name_kana: contact.companyNameKana,
+    customer_id: contact.customerId,
+    customer_code: contact.customerCode,
+
+    person_name: contact.personName,
+    person_name_kana: contact.personNameKana,
+    person_title: contact.personTitle,
+    department: contact.department,
+
+    email: contact.email,
+    phone_number: contact.phoneNumber,
+    mobile_number: contact.mobileNumber,
+    fax_number: contact.faxNumber,
+
+    postal_code: contact.postalCode,
+    address_1: contact.address1,
+    address_2: contact.address2,
+    website_url: contact.websiteUrl,
+
+    business_event: contact.businessEvent,
+    received_by_employee_code: contact.receivedByEmployeeCode,
+    source: contact.source,
+
+    allow_email_marketing: contact.allowEmailMarketing,
+    email_marketing_status: contact.emailMarketingStatus,
+
+    follow_status: contact.followStatus,
+    last_contacted_at: contact.lastContactedAt,
+    next_action_date: contact.nextActionDate,
+    next_action_note: contact.nextActionNote,
+
+    memo: contact.memo,
+    updated_at: new Date().toISOString(),
+  };
+
+  const cleanPayload = Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined)
+  );
+
+  const { data, error } = await supabase
+    .from('customer_contacts')
+    .update(cleanPayload)
+    .eq('id', id)
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('Failed to update customer contact:', error);
+    throw new Error(
+      `名刺連絡先の更新に失敗しました。${error.message ? ` ${error.message}` : ''}`
+    );
+  }
+
+  return {
+    id: data.id,
+    originalCustomerId: data.original_customer_id,
+    customerId: data.customer_id,
+
+    companyName: data.company_name,
+    companyNameKana: data.company_name_kana,
+    customerCode: data.customer_code,
+
+    personName: data.person_name,
+    personNameKana: data.person_name_kana,
+    personTitle: data.person_title,
+    department: data.department,
+
+    email: data.email,
+    phoneNumber: data.phone_number,
+    mobileNumber: data.mobile_number,
+    faxNumber: data.fax_number,
+
+    postalCode: data.postal_code,
+    address1: data.address_1,
+    address2: data.address_2,
+    websiteUrl: data.website_url,
+
+    businessEvent: data.business_event,
+    receivedByEmployeeCode: data.received_by_employee_code,
+    source: data.source,
+
+    allowEmailMarketing: data.allow_email_marketing,
+    emailMarketingStatus: data.email_marketing_status,
+
+    followStatus: data.follow_status,
+    lastContactedAt: data.last_contacted_at,
+    nextActionDate: data.next_action_date,
+    nextActionNote: data.next_action_note,
+
+    memo: data.memo,
+
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
+};
