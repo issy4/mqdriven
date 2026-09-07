@@ -6479,19 +6479,37 @@ export const createCustomerContact = async (
 export const getCustomerContacts = async (): Promise<CustomerContact[]> => {
   const supabase = getSupabase();
 
-  const { data, error } = await supabase
-    .from('customer_contacts')
-    .select('*')
-    .order('created_at', { ascending: false });
+  const pageSize = 1000;
+  let from = 0;
+  let allRows: any[] = [];
 
-  if (error) {
-    console.error('Failed to fetch customer contacts:', error);
-    throw new Error(
-      `名刺連絡先の取得に失敗しました。${error.message ? ` ${error.message}` : ''}`
-    );
+  while (true) {
+    const to = from + pageSize - 1;
+
+    const { data, error } = await supabase
+      .from('customer_contacts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      console.error('Failed to fetch customer contacts:', error);
+      throw new Error(
+        `名刺連絡先の取得に失敗しました。${error.message ? ` ${error.message}` : ''}`
+      );
+    }
+
+    const rows = data || [];
+    allRows = [...allRows, ...rows];
+
+    if (rows.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
   }
 
-  return (data || []).map(row => ({
+  return allRows.map(row => ({
     id: row.id,
     originalCustomerId: row.original_customer_id,
     customerId: row.customer_id,

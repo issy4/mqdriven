@@ -65,6 +65,40 @@ const emptyToNull = (value: string) => {
   return trimmed === '' ? null : trimmed;
 };
 
+const csvEscape = (value: unknown) => {
+  const text = value === null || value === undefined ? '' : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+};
+
+const downloadCsv = (filename: string, rows: Array<Record<string, unknown>>) => {
+  if (rows.length === 0) {
+    return;
+  }
+
+  const headers = Object.keys(rows[0]);
+
+  const csv = [
+    headers.map(csvEscape).join(','),
+    ...rows.map(row => headers.map(header => csvEscape(row[header])).join(',')),
+  ].join('\r\n');
+
+  // Excelで文字化けしにくいようにBOM付きにする
+  const blob = new Blob([`\uFEFF${csv}`], {
+    type: 'text/csv;charset=utf-8;',
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
 const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
   currentUser,
   allUsers,
@@ -302,6 +336,48 @@ const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
     }
   };
 
+  const handleExportContactsCsv = () => {
+  if (filteredContacts.length === 0) {
+    addToast('出力対象の連絡先がありません。', 'info');
+    return;
+  }
+
+  const rows = filteredContacts.map(contact => ({
+    会社名: contact.companyName ?? '',
+    顧客コード: contact.customerCode ?? '',
+    担当者名: contact.personName ?? '',
+    役職: contact.personTitle ?? '',
+    部署: contact.department ?? '',
+    メールアドレス: contact.email ?? '',
+    電話番号: contact.phoneNumber ?? '',
+    携帯番号: contact.mobileNumber ?? '',
+    FAX番号: contact.faxNumber ?? '',
+    郵便番号: contact.postalCode ?? '',
+    住所1: contact.address1 ?? '',
+    住所2: contact.address2 ?? '',
+    Webサイト: contact.websiteUrl ?? '',
+    取得イベント: contact.businessEvent ?? '',
+    受領者コード: contact.receivedByEmployeeCode ?? '',
+    フォロー状況: contact.followStatus ?? '未対応',
+    最終連絡日: contact.lastContactedAt ?? '',
+    次回アクション日: contact.nextActionDate ?? '',
+    次回アクション内容: contact.nextActionNote ?? '',
+    メール配信対象: contact.allowEmailMarketing === false ? '対象外' : '対象',
+    メール配信ステータス: contact.emailMarketingStatus ?? '',
+    正式顧客紐づけ: contact.customerId ? '紐づけ済み' : '未紐づけ',
+    source: contact.source ?? '',
+    メモ: contact.memo ?? '',
+    登録日: contact.createdAt ?? '',
+    更新日: contact.updatedAt ?? '',
+  }));
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  downloadCsv(`customer_contacts_${today}.csv`, rows);
+
+  addToast(`${filteredContacts.length.toLocaleString()}件の連絡先をCSV出力しました。`, 'success');
+};
+
   const followStatusOptions = useMemo(() => {
     const values = contacts
       .map(contact => contact.followStatus)
@@ -462,10 +538,21 @@ const BusinessCardContactsPage: React.FC<BusinessCardContactsPageProps> = ({
               </p>
             </div>
 
-            <div className="text-sm text-slate-500 dark:text-slate-400">
-              表示 {filteredContacts.length.toLocaleString()} / 全{' '}
-              {contacts.length.toLocaleString()} 件
-            </div>
+            <div className="flex flex-wrap items-center gap-3">
+  <div className="text-sm text-slate-500 dark:text-slate-400">
+    表示 {filteredContacts.length.toLocaleString()} / 全{' '}
+    {contacts.length.toLocaleString()} 件
+  </div>
+
+  <button
+    type="button"
+    onClick={handleExportContactsCsv}
+    disabled={filteredContacts.length === 0}
+    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+  >
+    CSV出力
+  </button>
+</div>
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-[1.5fr_1fr_1fr_1fr_1fr]">
