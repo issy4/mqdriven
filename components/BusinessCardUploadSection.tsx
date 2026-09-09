@@ -85,12 +85,21 @@ const pdfToImageBase64List = async (file: File): Promise<string[]> => {
   const arrayBuffer = await file.arrayBuffer();
 
   const pdf = await pdfjsLib.getDocument({
-    data: arrayBuffer,
+    data: new Uint8Array(arrayBuffer),
+
+    // pdfjs-dist の画像デコーダ用WASM
+    wasmUrl: new URL(
+      'pdfjs-dist/wasm/',
+      import.meta.url
+    ).toString(),
   }).promise;
 
   const images: string[] = [];
 
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+  // 名刺PDFなので最大4ページ程度までに制限
+  const pageCount = Math.min(pdf.numPages, 4);
+
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
 
     const viewport = page.getViewport({
@@ -98,28 +107,64 @@ const pdfToImageBase64List = async (file: File): Promise<string[]> => {
     });
 
     const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-
-    if (!context) {
-      throw new Error(`PDF ${pageNumber}ページ目の画像化に失敗しました。`);
-    }
 
     canvas.width = Math.ceil(viewport.width);
     canvas.height = Math.ceil(viewport.height);
 
-    await page.render({
+    const context = canvas.getContext('2d', {
+      alpha: false,
+    });
+
+    if (!context) {
+      throw new Error(
+        `PDF ${pageNumber}ページ目のCanvas作成に失敗しました。`
+      );
+    }
+
+    // 白背景にする
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    const renderTask = page.render({
       canvasContext: context,
       viewport,
       canvas,
-    }).promise;
+      background: '#ffffff',
+    });
 
-    const dataUrl = canvas.toDataURL('image/png', 1.0);
+    await renderTask.promise;
+
+    // PDF.js内部の画像描画を待つ
+    await new Promise<void>(resolve => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+
+    const dataUrl = canvas.toDataURL('image/png');
 
     const base64 = dataUrl.includes(',')
       ? dataUrl.split(',')[1]
       : dataUrl;
 
+    console.log(
+      `[BusinessCard OCR] PDF page ${pageNumber}:`,
+      {
+        width: canvas.width,
+        height: canvas.height,
+        base64Length: base64.length,
+      }
+    );
+
+    if (base64.length < 1000) {
+      console.warn(
+        `[BusinessCard OCR] PDF page ${pageNumber} の画像データが小さすぎます。`
+      );
+    }
+
     images.push(base64);
+
+    page.cleanup();
   }
 
   return images;
