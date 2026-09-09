@@ -1082,83 +1082,229 @@ const tryTesseractBusinessCard = async (
 };
 
 export const extractBusinessCardDetails = async (
-  fileBase64: string,
+  fileBase64: string | string[],
   mimeType: string
 ): Promise<BusinessCardContact> => {
   const defaultResult: BusinessCardContact = {
-    companyName: null,
-    department: null,
-    title: null,
-    personName: null,
-    personNameKana: null,
-    email: null,
-    phoneNumber: null,
-    mobileNumber: null,
-    faxNumber: null,
-    address: null,
-    postalCode: null,
-    websiteUrl: null,
-    notes: '手動で入力してください',
-    recipientEmployeeCode: null,
+    companyName: '',
+    department: '',
+    title: '',
+    personName: '',
+    personNameKana: '',
+    email: '',
+    phoneNumber: '',
+    mobileNumber: '',
+    faxNumber: '',
+    address: '',
+    postalCode: '',
+    websiteUrl: '',
+    notes: '',
+    recipientEmployeeCode: '',
+  };
+
+  // 画像1枚でも複数ページでも同じ形で処理する
+  const inputImages = Array.isArray(fileBase64)
+    ? fileBase64
+    : [fileBase64];
+
+  // data:image/png;base64,... が来ても
+  // 純粋なbase64だけが来ても対応
+  const normalizeBase64 = (value: string): string => {
+    if (!value) return '';
+
+    const base64Marker = ';base64,';
+    const markerIndex = value.indexOf(base64Marker);
+
+    if (markerIndex >= 0) {
+      return value.substring(markerIndex + base64Marker.length);
+    }
+
+    return value.includes(',')
+      ? value.substring(value.indexOf(',') + 1)
+      : value;
+  };
+
+  const normalizedImages = inputImages
+    .map(normalizeBase64)
+    .filter(Boolean);
+
+  if (normalizedImages.length === 0) {
+    throw new Error('OCR対象の画像データがありません。');
+  }
+
+  /*
+   * Geminiで失敗した場合のTesseractフォールバック。
+   *
+   * PDFはBusinessCardUploadSection側でPNG化されているので、
+   * ここではページ画像を1枚ずつTesseractに渡せる。
+   */
+  const tryTesseractFallback = async (): Promise<BusinessCardContact | null> => {
+    const results: BusinessCardContact[] = [];
+
+    for (const image of normalizedImages) {
+      try {
+        const result = await tryTesseractBusinessCard(
+          image,
+          mimeType,
+          defaultResult
+        );
+
+        if (result) {
+          results.push(result);
+        }
+      } catch (error) {
+        console.warn(
+          '[extractBusinessCardDetails] Tesseract page fallback failed',
+          error
+        );
+      }
+    }
+
+    if (results.length === 0) {
+      return null;
+    }
+
+    // 各ページから取れた情報を統合。
+    // 先に見つかった値を優先する。
+    const firstValue = (
+      getter: (item: BusinessCardContact) => string | null | undefined
+    ): string => {
+      for (const item of results) {
+        const value = getter(item);
+
+        if (typeof value === 'string' && value.trim()) {
+          return value.trim();
+        }
+      }
+
+      return '';
+    };
+
+    const noteValues = results
+      .map(item => item.notes?.trim())
+      .filter((value): value is string => Boolean(value));
+
+    return {
+      companyName: firstValue(item => item.companyName),
+      department: firstValue(item => item.department),
+      title: firstValue(item => item.title),
+      personName: firstValue(item => item.personName),
+      personNameKana: firstValue(item => item.personNameKana),
+      email: firstValue(item => item.email),
+      phoneNumber: firstValue(item => item.phoneNumber),
+      mobileNumber: firstValue(item => item.mobileNumber),
+      faxNumber: firstValue(item => item.faxNumber),
+      address: firstValue(item => item.address),
+      postalCode: firstValue(item => item.postalCode),
+      websiteUrl: firstValue(item => item.websiteUrl),
+      notes: noteValues.join('\n'),
+      recipientEmployeeCode: firstValue(
+        item => item.recipientEmployeeCode
+      ),
+    };
   };
 
   try {
-    const ai = checkOnlineAndAIOff();
-    const filePart = { inlineData: { data: fileBase64, mimeType } };
+    const ai = requireGeminiClient();
+
+    /*
+     * PDFを画像化した場合：
+     *   1ページ目 → inlineData
+     *   2ページ目 → inlineData
+     *
+     * 通常のJPEG/PNG：
+     *   1枚だけ → inlineData
+     */
+    const imageParts = normalizedImages.map((image, index) => ({
+      inlineData: {
+        data: image,
+        mimeType,
+      },
+    }));
 
     const instructionPart = {
-  text: `このファイルは日本語の名刺または名刺スキャンPDFです。
+      text: `このファイルは日本語の名刺または名刺スキャンPDFを画像化したものです。
+複数画像が与えられている場合、それらは同じ名刺PDFの各ページまたは表裏面です。
+すべての画像を確認し、1人分の名刺情報として統合してください。
+
 名刺の内容を読み取り、必ず純粋なJSONのみで返してください。説明文、Markdown、コードフェンスは禁止です。
 
 【最重要ルール】
-1. companyNameには、正式な会社名・法人名だけを入れる。
+1. companyNameには、正式な会社名・法人名・団体名だけを入れる。
 2. ロゴ名、ブランド名、キャッチコピー、スローガンはcompanyNameに入れない。
 3. 「共にある、未来へ」「未来へ」「Innovation」「Solution」「Future creation for all」などのキャッチコピーはnotesに入れる。
-4. 「株式会社」「有限会社」「合同会社」「一般社団法人」「公益財団法人」「学校法人」「医療法人」「協同組合」などを含む行を会社名として最優先する。
+4. 「株式会社」「有限会社」「合同会社」「一般社団法人」「公益財団法人」「学校法人」「医療法人」「協同組合」「同業組合」「連合会」「協会」「組合」などを含む行を会社名・団体名として最優先する。
 5. personNameには人名だけを入れる。役職名は絶対に入れない。
-6. 「代表取締役社長」「代表取締役」「取締役」「社長」「部長」「課長」「マネージャー」などはtitleに入れる。
+6. 「代表取締役社長」「代表取締役」「取締役」「社長」「理事長」「会長」「専務理事」「常務理事」「部長」「課長」「マネージャー」などはtitleに入れる。
 7. 日本語氏名とローマ字氏名が両方ある場合、personNameには日本語氏名を入れる。ローマ字氏名はnotesに入れる。
 8. TELとFAXは必ず分ける。
 9. 郵便番号はpostalCode、住所はaddressに分ける。
 10. 見つからない項目はnullではなく空文字で返す。
+11. 日本語面と英語面がある場合は、日本語面の情報を優先する。英語表記はnotesに入れる。
+12. 複数ページがある場合は全ページを確認し、別々の人物として扱わず、同じ名刺の表裏として情報を統合する。
 
-【会社名抽出ルール】
-- companyNameは、法人格を含む正式名称を優先する。
-- 「TOMOWEL」のようなロゴ・ブランド名はcompanyNameにしない。
-- 「共にある、未来へ」のようなキャッチコピーはcompanyNameにしない。
-- 会社名候補が複数ある場合は、日本語の正式法人名を優先する。
-- 英語表記の会社名はnotesに入れる。
+【会社名・団体名抽出ルール】
+- companyNameは、法人格・団体種別を含む正式名称を優先する。
+- 「株式会社」「有限会社」「合同会社」「一般社団法人」「公益財団法人」「学校法人」「医療法人」「協同組合」「同業組合」「連合会」「協会」「組合」などを含む長い行はcompanyName候補として扱う。
+- ロゴ・ブランド名はcompanyNameにしない。
+- キャッチコピーはcompanyNameにしない。
+- 会社名候補が複数ある場合は、日本語の正式法人名・正式団体名を優先する。
+- 英語表記の会社名・団体名は、日本語名が存在する場合はnotesに入れる。
+- 長い団体名でも省略しない。
+- 例：「全日本美容業生活衛生同業組合連合会」はcompanyNameにそのまま入れる。
 
 【氏名抽出ルール】
 - personNameには、役職名の近くにある日本語の氏名を入れる。
-- 「代表取締役社長」「取締役」「社長」「部長」などの直下または近くにある大きな日本語文字列は氏名候補として最優先する。
-- 日本語氏名とローマ字氏名が横並びの場合、日本語氏名をpersonNameに入れる。
-- ローマ字氏名はpersonNameに入れず、notesに入れる。
-- 例：「大橋 輝臣 Ohashi Teruomi」の場合、personNameは「大橋 輝臣」、notesに「Ohashi Teruomi」と入れる。
+- 「代表取締役社長」「取締役」「社長」「理事長」「会長」「部長」などの右側、直下、または近くにある大きな日本語文字列は氏名候補として最優先する。
+- 日本語氏名とローマ字氏名がある場合、日本語氏名をpersonNameに入れる。
+- ローマ字氏名はnotesに入れる。
 - 役職名だけの行をpersonNameに入れてはいけない。
+
+【文字間が空いた氏名の抽出ルール】
+- 日本語氏名が「野 本 義 久」のように1文字ずつ空いて表示されている場合でも人名として認識する。
+- 「野 本 義 久」は「野本 義久」としてpersonNameに入れる。
+- 役職名の右側または近くに大きく配置された日本語文字列は、文字間が空いていても氏名として扱う。
+- 「理事長　野 本 義 久」の場合、titleは「理事長」、personNameは「野本 義久」にする。
+- 姓と名の間だけ自然な1スペースに整える。
 
 【役職抽出ルール】
 - titleには役職のみを入れる。
-- 「代表取締役社長」はtitleに入れる。
+- 日本語役職が存在する場合は日本語役職を優先する。
+- 英語役職はnotesに入れる。
 - 氏名はtitleに入れない。
 - 部署名がある場合はdepartmentに入れる。
 
 【電話・FAX抽出ルール】
-- 「Tel:」「TEL:」「電話:」の後ろの番号はphoneNumberに入れる。
-- 「Fax:」「FAX:」の後ろの番号はfaxNumberに入れる。
-- 同じ行に Tel と Fax がある場合でも、必ず分けて抽出する。
-- 例：「Tel:03-3817-2002 Fax:03-3817-2120」の場合、phoneNumberは「03-3817-2002」、faxNumberは「03-3817-2120」。
-- 国際表記「+81-3-3817-2002」がある場合は、日本国内表記が一緒にあれば日本国内表記を優先する。
+- 「Tel:」「TEL:」「電話:」「ＴＥＬ」「Tel」「TEL」の後ろの番号はphoneNumberに入れる。
+- 「Fax:」「FAX:」「ＦＡＸ」「Fax」「FAX」の後ろの番号はfaxNumberに入れる。
+- 同じ行にTELとFAXがある場合も必ず分離する。
+- 日本国内表記と+81表記が両方ある場合は、日本国内表記を優先する。
+- 日本国内表記がない場合は国際表記を入れてよい。
+- 数字が小さくてもTEL/FAXの近くにある番号を確認する。
 
 【住所抽出ルール】
 - 「〒」または郵便番号から始まる行は住所として扱う。
 - postalCodeには郵便番号だけを入れる。
 - addressには郵便番号を除いた住所を入れる。
-- 例：「〒112-8501 東京都文京区小石川4-14-12」の場合、postalCodeは「112-8501」、addressは「東京都文京区小石川4-14-12」。
-- 英語住所しかない場合はaddressに英語住所を入れてよい。
+- 住所が複数行の場合は1つの住所として連結する。
+- 例：
+  「〒151-0053 東京都渋谷区代々木1-56-4」
+  「美容会館7階」
+  は
+  postalCode = 「151-0053」
+  address = 「東京都渋谷区代々木1-56-4 美容会館7階」
+  とする。
+- 日本語住所が存在する場合は日本語住所を優先する。
 
-【今回のような名刺の判定例】
-入力に以下が見える場合：
+【複数ページ・表裏面の処理ルール】
+- すべての画像を確認する。
+- 日本語面がある場合、日本語面のcompanyName、personName、title、address、phoneNumber、faxNumberを優先する。
+- 英語面は日本語面で不足した情報の補完に使う。
+- 日本語面と英語面で同じ電話番号が表記違いの場合、重複させない。
+- 英語会社名、英語氏名、英語役職などはnotesにまとめる。
+
+【判定例1】
+入力：
 TOMOWEL
 共にある、未来へ
 代表取締役社長
@@ -1167,7 +1313,7 @@ TOMOWEL
 〒112-8501 東京都文京区小石川4-14-12
 Tel:03-3817-2002 Fax:03-3817-2120
 
-出力は必ず以下のようにする：
+出力：
 {
   "companyName": "共同印刷株式会社",
   "department": "",
@@ -1182,6 +1328,42 @@ Tel:03-3817-2002 Fax:03-3817-2120
   "postalCode": "112-8501",
   "websiteUrl": "",
   "notes": "TOMOWEL / 共にある、未来へ / Ohashi Teruomi",
+  "recipientEmployeeCode": ""
+}
+
+【判定例2】
+1ページ目：
+全日本美容業生活衛生同業組合連合会
+理事長　野 本 義 久
+〒151-0053 東京都渋谷区代々木1-56-4
+美容会館7階
+TEL：03-3379-2064
+FAX：03-3370-8917
+
+2ページ目：
+All Japan Beauty Shop Owner's Federation
+PRESIDENT
+YOSHIHISA NOMOTO
+7F, Biyokaikan Bldg., 1-56-4, Yoyogi, Shibuya-ku,
+Tokyo 151-0053, JAPAN
+Tel:+81-3-3379-2064
+FAX:+81-3-3370-8917
+
+出力：
+{
+  "companyName": "全日本美容業生活衛生同業組合連合会",
+  "department": "",
+  "title": "理事長",
+  "personName": "野本 義久",
+  "personNameKana": "",
+  "email": "",
+  "phoneNumber": "03-3379-2064",
+  "mobileNumber": "",
+  "faxNumber": "03-3370-8917",
+  "address": "東京都渋谷区代々木1-56-4 美容会館7階",
+  "postalCode": "151-0053",
+  "websiteUrl": "",
+  "notes": "All Japan Beauty Shop Owner's Federation / PRESIDENT / YOSHIHISA NOMOTO",
   "recipientEmployeeCode": ""
 }
 
@@ -1202,76 +1384,206 @@ Tel:03-3817-2002 Fax:03-3817-2120
   "notes": "",
   "recipientEmployeeCode": ""
 }`,
-};
+    };
 
     const response = await ai.models.generateContent({
       model: invoiceOcrModel,
-      contents: { parts: [filePart, instructionPart] },
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            ...imageParts,
+            instructionPart,
+          ],
+        },
+      ],
       config: {
+        responseMimeType: 'application/json',
         responseSchema: businessCardSchema,
       },
     });
 
-    const rawText = response.text.trim();
-    console.log('[extractBusinessCardDetails] AI応答全文:', rawText);
+    const rawText = response.text?.trim() ?? '';
 
-    const jsonStr = stripCodeFences(rawText);
+    console.log(
+      '[extractBusinessCardDetails] AI応答全文:',
+      rawText
+    );
 
-    if (!jsonStr.startsWith('{') && !jsonStr.startsWith('[')) {
-      console.warn('[extractBusinessCardDetails] AIがJSON以外を返却、テキスト解析を試行');
+    if (!rawText) {
+      throw new Error('GeminiからOCR結果が返りませんでした。');
+    }
+
+    // 万一コードフェンスが付いていても除去
+    let jsonStr = rawText;
+
+    if (jsonStr.startsWith('```json')) {
+      jsonStr = jsonStr
+        .replace(/^```json\s*/i, '')
+        .replace(/\s*```$/, '');
+    } else if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr
+        .replace(/^```\s*/, '')
+        .replace(/\s*```$/, '');
+    }
+
+    /*
+     * JSON以外が返ってきた場合
+     */
+    if (!jsonStr.trim().startsWith('{')) {
+      console.warn(
+        '[extractBusinessCardDetails] AIがJSON以外を返却。テキスト解析を試行します。'
+      );
 
       const extracted = extractFromText(rawText);
 
       return {
         ...defaultResult,
-        ...normalizeBusinessCardResult(extracted),
-        notes: `AIテキスト解析: ${rawText.substring(0, 100)}...`,
+        ...extracted,
+        notes:
+          extracted.notes ||
+          `AIテキスト解析: ${rawText.substring(0, 300)}`,
       };
     }
+
+    let parsed: any;
 
     try {
-      const parsed = JSON.parse(jsonStr);
-      console.log('[extractBusinessCardDetails] パース結果:', parsed);
-
-      return {
-        ...defaultResult,
-        ...normalizeBusinessCardResult(parsed),
-      };
+      parsed = JSON.parse(jsonStr);
     } catch (parseError) {
-      console.error('[extractBusinessCardDetails] JSONパースエラー:', parseError);
+      console.error(
+        '[extractBusinessCardDetails] JSONパースエラー:',
+        parseError
+      );
 
-      const fallback = await tryTesseractBusinessCard(fileBase64, mimeType, defaultResult);
+      const fallback = await tryTesseractFallback();
 
       if (fallback) {
-        return {
-          ...defaultResult,
-          ...normalizeBusinessCardResult(fallback),
-        };
+        return fallback;
       }
 
-      return {
-        ...defaultResult,
-        notes: `JSONパースエラー: ${
-          parseError instanceof Error ? parseError.message : '不明なエラー'
-        }`,
-      };
+      throw new Error(
+        `Gemini OCR結果のJSON解析に失敗しました。${
+          parseError instanceof Error
+            ? ` ${parseError.message}`
+            : ''
+        }`
+      );
     }
-  } catch (error) {
-    console.error('[extractBusinessCardDetails] エラー:', error);
 
-    const fallback = await tryTesseractBusinessCard(fileBase64, mimeType, defaultResult);
+    /*
+     * null / undefined が混じっても
+     * UI側には空文字を返す。
+     */
+    const result: BusinessCardContact = {
+      companyName:
+        typeof parsed?.companyName === 'string'
+          ? parsed.companyName.trim()
+          : '',
+      department:
+        typeof parsed?.department === 'string'
+          ? parsed.department.trim()
+          : '',
+      title:
+        typeof parsed?.title === 'string'
+          ? parsed.title.trim()
+          : '',
+      personName:
+        typeof parsed?.personName === 'string'
+          ? parsed.personName.trim()
+          : '',
+      personNameKana:
+        typeof parsed?.personNameKana === 'string'
+          ? parsed.personNameKana.trim()
+          : '',
+      email:
+        typeof parsed?.email === 'string'
+          ? parsed.email.trim()
+          : '',
+      phoneNumber:
+        typeof parsed?.phoneNumber === 'string'
+          ? parsed.phoneNumber.trim()
+          : '',
+      mobileNumber:
+        typeof parsed?.mobileNumber === 'string'
+          ? parsed.mobileNumber.trim()
+          : '',
+      faxNumber:
+        typeof parsed?.faxNumber === 'string'
+          ? parsed.faxNumber.trim()
+          : '',
+      address:
+        typeof parsed?.address === 'string'
+          ? parsed.address.trim()
+          : '',
+      postalCode:
+        typeof parsed?.postalCode === 'string'
+          ? parsed.postalCode.trim()
+          : '',
+      websiteUrl:
+        typeof parsed?.websiteUrl === 'string'
+          ? parsed.websiteUrl.trim()
+          : '',
+      notes:
+        typeof parsed?.notes === 'string'
+          ? parsed.notes.trim()
+          : '',
+      recipientEmployeeCode:
+        typeof parsed?.recipientEmployeeCode === 'string'
+          ? parsed.recipientEmployeeCode.trim()
+          : '',
+    };
+
+    console.log(
+      '[extractBusinessCardDetails] パース結果:',
+      result
+    );
+
+    return result;
+  } catch (error) {
+    console.error(
+      '[extractBusinessCardDetails] エラー:',
+      error
+    );
+
+    /*
+     * Geminiに失敗しても、
+     * PDFはすでにPNG化されているので
+     * Tesseractを各ページに対して試せる。
+     */
+    const fallback = await tryTesseractFallback();
 
     if (fallback) {
-      return {
-        ...defaultResult,
-        ...normalizeBusinessCardResult(fallback),
-      };
+      console.log(
+        '[extractBusinessCardDetails] Tesseract fallback成功:',
+        fallback
+      );
+
+      return fallback;
     }
 
-    return {
-      ...defaultResult,
-      notes: `解析エラー: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
+    /*
+     * Quotaエラーは「OCR失敗」に見せず、
+     * 原因が分かるメッセージをそのまま上へ返す。
+     */
+    if (
+      message.includes('429') ||
+      message.includes('RESOURCE_EXHAUSTED') ||
+      message.includes('Quota exceeded')
+    ) {
+      throw new Error(
+        'Gemini APIの利用上限に達したため名刺OCRを実行できませんでした。時間を置いて再実行してください。'
+      );
+    }
+
+    throw new Error(
+      `名刺OCRに失敗しました。${message ? ` ${message}` : ''}`
+    );
   }
 };
 

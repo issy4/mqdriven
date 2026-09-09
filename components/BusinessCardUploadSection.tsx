@@ -1,4 +1,6 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker?url';
 import {
   BusinessCardContact,
   CustomerContact,
@@ -6,6 +8,7 @@ import {
   EmployeeUser,
   Toast,
 } from '../types';
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 import { extractBusinessCardDetails } from '../services/geminiService';
 import { findAutoLinkCustomerCandidate } from '../services/dataService';
 import { googleDriveService, GoogleDriveFile } from '../services/googleDriveService';
@@ -76,6 +79,50 @@ const normalizeContact = (contact: BusinessCardContact | null | undefined): Busi
   });
 
   return normalized;
+};
+
+const pdfToImageBase64List = async (file: File): Promise<string[]> => {
+  const arrayBuffer = await file.arrayBuffer();
+
+  const pdf = await pdfjsLib.getDocument({
+    data: arrayBuffer,
+  }).promise;
+
+  const images: string[] = [];
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+
+    const viewport = page.getViewport({
+      scale: 2.5,
+    });
+
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      throw new Error(`PDF ${pageNumber}ページ目の画像化に失敗しました。`);
+    }
+
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+
+    await page.render({
+      canvasContext: context,
+      viewport,
+      canvas,
+    }).promise;
+
+    const dataUrl = canvas.toDataURL('image/png', 1.0);
+
+    const base64 = dataUrl.includes(',')
+      ? dataUrl.split(',')[1]
+      : dataUrl;
+
+    images.push(base64);
+  }
+
+  return images;
 };
 
 const looksLikeFileName = (value?: string | null): boolean => {
@@ -455,11 +502,27 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
       );
 
       try {
-        const base64 = await readFileAsBase64(file);
-        const parsed = await extractBusinessCardDetails(
-          base64,
-          file.type || 'application/octet-stream'
-        );
+        let parsed: BusinessCardContact;
+
+const isPdf =
+  file.type === 'application/pdf' ||
+  file.name.toLowerCase().endsWith('.pdf');
+
+if (isPdf) {
+  const pageImages = await pdfToImageBase64List(file);
+
+  parsed = await extractBusinessCardDetails(
+    pageImages,
+    'image/png'
+  );
+} else {
+  const base64 = await readFileAsBase64(file);
+
+  parsed = await extractBusinessCardDetails(
+    base64,
+    file.type || 'image/jpeg'
+  );
+}
 
         const contact = normalizeContact(parsed);
 
