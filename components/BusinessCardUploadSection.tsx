@@ -261,15 +261,15 @@ await renderTask.promise;
     page.cleanup();
   }
 
-  await pdf.destroy();
+  await loadingTask.destroy();
 
-  if (images.length === 0) {
-    throw new Error(
-      'PDFからOCR用画像を生成できませんでした。'
-    );
-  }
+if (images.length === 0) {
+  throw new Error(
+    'PDFからOCR用画像を生成できませんでした。'
+  );
+}
 
-  return images;
+return images;
 };
 
 const looksLikeFileName = (value?: string | null): boolean => {
