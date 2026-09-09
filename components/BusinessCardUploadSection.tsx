@@ -357,23 +357,16 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
 
       const created = await onAutoCreateCustomerContact(payload);
 
-      setDrafts(prev =>
-        prev.map(draft =>
-          draft.id === draftId
-            ? {
-                ...draft,
-                insertStatus: 'success',
-                createdContact: created,
-                contactPayload: {
-                  ...payload,
-                  id: created.id,
-                },
-                autoLinkStatus: autoCandidate ? 'linked' : 'not_found',
-                autoLinkedCustomer: autoCandidate,
-              }
-            : draft
-        )
-      );
+// 登録成功した下書きを画面から削除
+setDrafts(prev => {
+  const target = prev.find(draft => draft.id === draftId);
+
+  if (target) {
+    URL.revokeObjectURL(target.fileUrl);
+  }
+
+  return prev.filter(draft => draft.id !== draftId);
+});
 
       if (autoCandidate) {
         addToast(
