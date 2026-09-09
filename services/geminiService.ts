@@ -1131,7 +1131,7 @@ const generateGeminiWithRetry = async (
 };
 
 export const extractBusinessCardDetails = async (
-  fileBase64: string | string[],
+  fileBase64: string,
   mimeType: string
 ): Promise<BusinessCardContact> => {
   const defaultResult: BusinessCardContact = {
@@ -1151,13 +1151,6 @@ export const extractBusinessCardDetails = async (
     recipientEmployeeCode: '',
   };
 
-  // 画像1枚でも複数ページでも同じ形で処理する
-  const inputImages = Array.isArray(fileBase64)
-    ? fileBase64
-    : [fileBase64];
-
-  // data:image/png;base64,... が来ても
-  // 純粋なbase64だけが来ても対応
   const normalizeBase64 = (value: string): string => {
     if (!value) return '';
 
@@ -1173,109 +1166,41 @@ export const extractBusinessCardDetails = async (
       : value;
   };
 
-  const normalizedImages = inputImages
-    .map(normalizeBase64)
-    .filter(Boolean);
+  const normalizedBase64 = normalizeBase64(fileBase64);
 
-  if (normalizedImages.length === 0) {
-    throw new Error('OCR対象の画像データがありません。');
+  if (!normalizedBase64) {
+    throw new Error('OCR対象のファイルデータがありません。');
   }
 
-  /*
-   * Geminiで失敗した場合のTesseractフォールバック。
-   *
-   * PDFはBusinessCardUploadSection側でPNG化されているので、
-   * ここではページ画像を1枚ずつTesseractに渡せる。
-   */
-  const tryTesseractFallback = async (): Promise<BusinessCardContact | null> => {
-    const results: BusinessCardContact[] = [];
+  const isPdf =
+    mimeType === 'application/pdf' ||
+    mimeType.toLowerCase().includes('pdf');
 
-    for (const image of normalizedImages) {
-      try {
-        const result = await tryTesseractBusinessCard(
-          image,
-          mimeType,
-          defaultResult
-        );
+  const tryImageTesseractFallback = async (): Promise<BusinessCardContact | null> => {
+    // Tesseract.js はPDFを直接扱えないため、画像の場合だけフォールバックする。
+    if (isPdf) return null;
 
-        if (result) {
-          results.push(result);
-        }
-      } catch (error) {
-        console.warn(
-          '[extractBusinessCardDetails] Tesseract page fallback failed',
-          error
-        );
-      }
-    }
-
-    if (results.length === 0) {
-      return null;
-    }
-
-    // 各ページから取れた情報を統合。
-    // 先に見つかった値を優先する。
-    const firstValue = (
-      getter: (item: BusinessCardContact) => string | null | undefined
-    ): string => {
-      for (const item of results) {
-        const value = getter(item);
-
-        if (typeof value === 'string' && value.trim()) {
-          return value.trim();
-        }
-      }
-
-      return '';
-    };
-
-    const noteValues = results
-      .map(item => item.notes?.trim())
-      .filter((value): value is string => Boolean(value));
-
-    return {
-      companyName: firstValue(item => item.companyName),
-      department: firstValue(item => item.department),
-      title: firstValue(item => item.title),
-      personName: firstValue(item => item.personName),
-      personNameKana: firstValue(item => item.personNameKana),
-      email: firstValue(item => item.email),
-      phoneNumber: firstValue(item => item.phoneNumber),
-      mobileNumber: firstValue(item => item.mobileNumber),
-      faxNumber: firstValue(item => item.faxNumber),
-      address: firstValue(item => item.address),
-      postalCode: firstValue(item => item.postalCode),
-      websiteUrl: firstValue(item => item.websiteUrl),
-      notes: noteValues.join('\n'),
-      recipientEmployeeCode: firstValue(
-        item => item.recipientEmployeeCode
-      ),
-    };
+    return await tryTesseractBusinessCard(
+      normalizedBase64,
+      mimeType || 'image/jpeg',
+      defaultResult
+    );
   };
 
   try {
-    const ai = requireGeminiClient();
+    const ai = checkOnlineAndAIOff();
 
-    /*
-     * PDFを画像化した場合：
-     *   1ページ目 → inlineData
-     *   2ページ目 → inlineData
-     *
-     * 通常のJPEG/PNG：
-     *   1枚だけ → inlineData
-     */
-    const imageParts = normalizedImages.map((image, index) => ({
+    // PDF / JPEG / PNG を変換せず、そのままGeminiへ渡す。
+    const filePart = {
       inlineData: {
-        data: image,
-        mimeType,
+        data: normalizedBase64,
+        mimeType: mimeType || 'application/octet-stream',
       },
-    }));
+    };
 
     const instructionPart = {
-      text: `このファイルは日本語の名刺または名刺スキャンPDFを画像化したものです。
-複数画像が与えられている場合、それらは同じ名刺PDFの各ページまたは表裏面です。
-すべての画像を確認し、1人分の名刺情報として統合してください。
-
+      text: `このファイルは日本語の名刺、名刺画像、または名刺スキャンPDFです。
+PDFが複数ページの場合は、すべてのページを確認し、同じ名刺の表裏として1人分の情報に統合してください。
 名刺の内容を読み取り、必ず純粋なJSONのみで返してください。説明文、Markdown、コードフェンスは禁止です。
 
 【最重要ルール】
@@ -1290,7 +1215,7 @@ export const extractBusinessCardDetails = async (
 9. 郵便番号はpostalCode、住所はaddressに分ける。
 10. 見つからない項目はnullではなく空文字で返す。
 11. 日本語面と英語面がある場合は、日本語面の情報を優先する。英語表記はnotesに入れる。
-12. 複数ページがある場合は全ページを確認し、別々の人物として扱わず、同じ名刺の表裏として情報を統合する。
+12. PDFが複数ページの場合は全ページを確認し、別々の人物として扱わず、同じ名刺の表裏として情報を統合する。
 
 【会社名・団体名抽出ルール】
 - companyNameは、法人格・団体種別を含む正式名称を優先する。
@@ -1346,7 +1271,7 @@ export const extractBusinessCardDetails = async (
 - 日本語住所が存在する場合は日本語住所を優先する。
 
 【複数ページ・表裏面の処理ルール】
-- すべての画像を確認する。
+- PDFが複数ページの場合はすべてのページを確認する。
 - 日本語面がある場合、日本語面のcompanyName、personName、title、address、phoneNumber、faxNumberを優先する。
 - 英語面は日本語面で不足した情報の補完に使う。
 - 日本語面と英語面で同じ電話番号が表記違いの場合、重複させない。
@@ -1436,23 +1361,20 @@ FAX:+81-3-3370-8917
     };
 
     const response = await generateGeminiWithRetry(() =>
-  ai.models.generateContent({
-    model: invoiceOcrModel,
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          ...imageParts,
-          instructionPart,
-        ],
-      },
-    ],
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: businessCardSchema,
-    },
-  })
-);
+      ai.models.generateContent({
+        model: invoiceOcrModel,
+        contents: {
+          parts: [
+            filePart,
+            instructionPart,
+          ],
+        },
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: businessCardSchema,
+        },
+      })
+    );
 
     const rawText = response.text?.trim() ?? '';
 
@@ -1465,22 +1387,8 @@ FAX:+81-3-3370-8917
       throw new Error('GeminiからOCR結果が返りませんでした。');
     }
 
-    // 万一コードフェンスが付いていても除去
-    let jsonStr = rawText;
+    const jsonStr = stripCodeFences(rawText);
 
-    if (jsonStr.startsWith('```json')) {
-      jsonStr = jsonStr
-        .replace(/^```json\s*/i, '')
-        .replace(/\s*```$/, '');
-    } else if (jsonStr.startsWith('```')) {
-      jsonStr = jsonStr
-        .replace(/^```\s*/, '')
-        .replace(/\s*```$/, '');
-    }
-
-    /*
-     * JSON以外が返ってきた場合
-     */
     if (!jsonStr.trim().startsWith('{')) {
       console.warn(
         '[extractBusinessCardDetails] AIがJSON以外を返却。テキスト解析を試行します。'
@@ -1488,29 +1396,36 @@ FAX:+81-3-3370-8917
 
       const extracted = extractFromText(rawText);
 
-      return {
+      return normalizeBusinessCardResult({
         ...defaultResult,
         ...extracted,
         notes:
           extracted.notes ||
           `AIテキスト解析: ${rawText.substring(0, 300)}`,
-      };
+      });
     }
 
-    let parsed: any;
-
     try {
-      parsed = JSON.parse(jsonStr);
+      const parsed = JSON.parse(jsonStr);
+
+      const result = normalizeBusinessCardResult(parsed);
+
+      console.log(
+        '[extractBusinessCardDetails] パース結果:',
+        result
+      );
+
+      return result;
     } catch (parseError) {
       console.error(
         '[extractBusinessCardDetails] JSONパースエラー:',
         parseError
       );
 
-      const fallback = await tryTesseractFallback();
+      const fallback = await tryImageTesseractFallback();
 
       if (fallback) {
-        return fallback;
+        return normalizeBusinessCardResult(fallback);
       }
 
       throw new Error(
@@ -1521,88 +1436,13 @@ FAX:+81-3-3370-8917
         }`
       );
     }
-
-    /*
-     * null / undefined が混じっても
-     * UI側には空文字を返す。
-     */
-    const result: BusinessCardContact = {
-      companyName:
-        typeof parsed?.companyName === 'string'
-          ? parsed.companyName.trim()
-          : '',
-      department:
-        typeof parsed?.department === 'string'
-          ? parsed.department.trim()
-          : '',
-      title:
-        typeof parsed?.title === 'string'
-          ? parsed.title.trim()
-          : '',
-      personName:
-        typeof parsed?.personName === 'string'
-          ? parsed.personName.trim()
-          : '',
-      personNameKana:
-        typeof parsed?.personNameKana === 'string'
-          ? parsed.personNameKana.trim()
-          : '',
-      email:
-        typeof parsed?.email === 'string'
-          ? parsed.email.trim()
-          : '',
-      phoneNumber:
-        typeof parsed?.phoneNumber === 'string'
-          ? parsed.phoneNumber.trim()
-          : '',
-      mobileNumber:
-        typeof parsed?.mobileNumber === 'string'
-          ? parsed.mobileNumber.trim()
-          : '',
-      faxNumber:
-        typeof parsed?.faxNumber === 'string'
-          ? parsed.faxNumber.trim()
-          : '',
-      address:
-        typeof parsed?.address === 'string'
-          ? parsed.address.trim()
-          : '',
-      postalCode:
-        typeof parsed?.postalCode === 'string'
-          ? parsed.postalCode.trim()
-          : '',
-      websiteUrl:
-        typeof parsed?.websiteUrl === 'string'
-          ? parsed.websiteUrl.trim()
-          : '',
-      notes:
-        typeof parsed?.notes === 'string'
-          ? parsed.notes.trim()
-          : '',
-      recipientEmployeeCode:
-        typeof parsed?.recipientEmployeeCode === 'string'
-          ? parsed.recipientEmployeeCode.trim()
-          : '',
-    };
-
-    console.log(
-      '[extractBusinessCardDetails] パース結果:',
-      result
-    );
-
-    return result;
   } catch (error) {
     console.error(
       '[extractBusinessCardDetails] エラー:',
       error
     );
 
-    /*
-     * Geminiに失敗しても、
-     * PDFはすでにPNG化されているので
-     * Tesseractを各ページに対して試せる。
-     */
-    const fallback = await tryTesseractFallback();
+    const fallback = await tryImageTesseractFallback();
 
     if (fallback) {
       console.log(
@@ -1610,7 +1450,7 @@ FAX:+81-3-3370-8917
         fallback
       );
 
-      return fallback;
+      return normalizeBusinessCardResult(fallback);
     }
 
     const message =
@@ -1618,10 +1458,6 @@ FAX:+81-3-3370-8917
         ? error.message
         : String(error);
 
-    /*
-     * Quotaエラーは「OCR失敗」に見せず、
-     * 原因が分かるメッセージをそのまま上へ返す。
-     */
     if (
       message.includes('429') ||
       message.includes('RESOURCE_EXHAUSTED') ||
@@ -1629,6 +1465,16 @@ FAX:+81-3-3370-8917
     ) {
       throw new Error(
         'Gemini APIの利用上限に達したため名刺OCRを実行できませんでした。時間を置いて再実行してください。'
+      );
+    }
+
+    if (
+      message.includes('503') ||
+      message.includes('UNAVAILABLE') ||
+      message.includes('high demand')
+    ) {
+      throw new Error(
+        'Gemini APIが混雑しているため名刺OCRを実行できませんでした。時間を置いて再実行してください。'
       );
     }
 

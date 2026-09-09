@@ -1,6 +1,4 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorker from 'pdfjs-dist/build/pdf.worker?url';
 import {
   BusinessCardContact,
   CustomerContact,
@@ -8,7 +6,6 @@ import {
   EmployeeUser,
   Toast,
 } from '../types';
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 import { extractBusinessCardDetails } from '../services/geminiService';
 import { findAutoLinkCustomerCandidate } from '../services/dataService';
 import { googleDriveService, GoogleDriveFile } from '../services/googleDriveService';
@@ -79,197 +76,6 @@ const normalizeContact = (contact: BusinessCardContact | null | undefined): Busi
   });
 
   return normalized;
-};
-
-const pdfToImageBase64List = async (file: File): Promise<string[]> => {
-  const arrayBuffer = await file.arrayBuffer();
-
-  const loadingTask = pdfjsLib.getDocument({
-    data: new Uint8Array(arrayBuffer),
-
-    // ブラウザ側のImageDecoder / OffscreenCanvasを使わず、
-    // PDF.jsの通常Canvas描画を優先する
-    isImageDecoderSupported: false,
-    isOffscreenCanvasSupported: false,
-
-    // 大きな画像も省略しない
-    maxImageSize: -1,
-
-    // 画像リサイズを無効化
-    canvasMaxAreaInBytes: -1,
-
-    // WASM
-    wasmUrl: new URL(
-      'pdfjs-dist/wasm/',
-      import.meta.url
-    ).toString(),
-  });
-
-  const pdf = await loadingTask.promise;
-
-  const images: string[] = [];
-
-  const pageCount = Math.min(pdf.numPages, 4);
-
-  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-
-    /*
-     * 先にOperatorListを取得させることで、
-     * PDF内部の画像オブジェクトを読み込ませる
-     */
-    try {
-      await page.getOperatorList();
-    } catch (operatorError) {
-      console.warn(
-        `[BusinessCard OCR] PDF page ${pageNumber} operator list warning:`,
-        operatorError
-      );
-    }
-
-    /*
-     * 名刺の小さい文字を読むため3倍で描画
-     */
-    const viewport = page.getViewport({
-      scale: 3.0,
-    });
-
-    const canvas = document.createElement('canvas');
-
-    canvas.width = Math.ceil(viewport.width);
-    canvas.height = Math.ceil(viewport.height);
-
-    const context = canvas.getContext('2d', {
-      alpha: false,
-      willReadFrequently: true,
-    });
-
-    if (!context) {
-      throw new Error(
-        `PDF ${pageNumber}ページ目のCanvas作成に失敗しました。`
-      );
-    }
-
-    /*
-     * 白背景
-     */
-    context.save();
-
-context.fillStyle = '#ffffff';
-context.fillRect(
-  0,
-  0,
-  canvas.width,
-  canvas.height
-);
-
-context.restore();
-
-const renderTask = page.render({
-  canvas,
-  canvasContext: context,
-  viewport,
-  background: '#ffffff',
-});
-
-await renderTask.promise;
-
-    /*
-     * PDF内画像の描画完了を少し待つ
-     */
-    await new Promise(resolve =>
-      setTimeout(resolve, 300)
-    );
-
-    /*
-     * Canvasがほぼ白紙か簡易チェック
-     */
-    const imageData = context.getImageData(
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    );
-
-    let nonWhitePixels = 0;
-
-    const data = imageData.data;
-
-    /*
-     * 全ピクセルを見ると重いので100ピクセルおき程度に確認
-     */
-    const step = Math.max(
-      4,
-      Math.floor(data.length / 40000 / 4) * 4
-    );
-
-    for (let i = 0; i < data.length; i += step) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-
-      if (
-        r < 245 ||
-        g < 245 ||
-        b < 245
-      ) {
-        nonWhitePixels += 1;
-      }
-    }
-
-    const dataUrl = canvas.toDataURL(
-      'image/png'
-    );
-
-    const base64 = dataUrl.includes(',')
-      ? dataUrl.split(',')[1]
-      : dataUrl;
-
-    console.log(
-      `[BusinessCard OCR] PDF page ${pageNumber}:`,
-      {
-        width: canvas.width,
-        height: canvas.height,
-        base64Length: base64.length,
-        nonWhitePixels,
-      }
-    );
-
-    /*
-     * デバッグ用プレビュー
-     */
-    console.log(
-      `[BusinessCard OCR] PDF page ${pageNumber} preview:`,
-      dataUrl
-    );
-
-    if (
-      base64.length < 15000 ||
-      nonWhitePixels < 50
-    ) {
-      console.warn(
-        `[BusinessCard OCR] PDF page ${pageNumber} は画像が十分に描画されていない可能性があります。`,
-        {
-          base64Length: base64.length,
-          nonWhitePixels,
-        }
-      );
-    }
-
-    images.push(base64);
-
-    page.cleanup();
-  }
-
-  await loadingTask.destroy();
-
-if (images.length === 0) {
-  throw new Error(
-    'PDFからOCR用画像を生成できませんでした。'
-  );
-}
-
-return images;
 };
 
 const looksLikeFileName = (value?: string | null): boolean => {
@@ -649,27 +455,12 @@ const BusinessCardUploadSection: React.FC<BusinessCardUploadSectionProps> = ({
       );
 
       try {
-        let parsed: BusinessCardContact;
+        const base64 = await readFileAsBase64(file);
 
-const isPdf =
-  file.type === 'application/pdf' ||
-  file.name.toLowerCase().endsWith('.pdf');
-
-if (isPdf) {
-  const pageImages = await pdfToImageBase64List(file);
-
-  parsed = await extractBusinessCardDetails(
-    pageImages,
-    'image/png'
-  );
-} else {
-  const base64 = await readFileAsBase64(file);
-
-  parsed = await extractBusinessCardDetails(
-    base64,
-    file.type || 'image/jpeg'
-  );
-}
+        const parsed = await extractBusinessCardDetails(
+          base64,
+          file.type || 'application/octet-stream'
+        );
 
         const contact = normalizeContact(parsed);
 
@@ -990,8 +781,8 @@ if (isPdf) {
                 名刺の取り込み
               </h3>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                ローカルファイルのアップロードやGoogle Driveからのインポートを行い、
-                OCR処理後に customer_contacts へ連絡先として登録します。
+                ローカルファイルをアップロードし、OCR処理後に
+                customer_contacts へ連絡先として登録します。
               </p>
             </div>
 
@@ -1141,7 +932,7 @@ if (isPdf) {
             ここにファイルをドラッグ＆ドロップしてください（JPEG / PNG / PDF）
           </p>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            「ファイルを選択」をクリックするか、Google Driveからインポートすることもできます。
+            「ファイルを選択」をクリックするか、PDF・JPEG・PNGをドラッグ＆ドロップできます。
           </p>
         </div>
 
