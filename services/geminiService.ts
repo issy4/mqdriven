@@ -1081,6 +1081,55 @@ const tryTesseractBusinessCard = async (
   }
 };
 
+const sleep = (ms: number) =>
+  new Promise(resolve => setTimeout(resolve, ms));
+
+const generateGeminiWithRetry = async (
+  fn: () => Promise<any>,
+  maxAttempts = 4
+) => {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error);
+
+      const retryable =
+        message.includes('503') ||
+        message.includes('UNAVAILABLE') ||
+        message.includes('high demand') ||
+        message.includes('429') ||
+        message.includes('RESOURCE_EXHAUSTED');
+
+      if (!retryable || attempt === maxAttempts) {
+        throw error;
+      }
+
+      const waitMs =
+        attempt === 1
+          ? 2000
+          : attempt === 2
+            ? 5000
+            : 10000;
+
+      console.warn(
+        `[BusinessCard OCR] Gemini一時エラー。${waitMs / 1000}秒後に再試行します。 (${attempt}/${maxAttempts})`
+      );
+
+      await sleep(waitMs);
+    }
+  }
+
+  throw lastError;
+};
+
 export const extractBusinessCardDetails = async (
   fileBase64: string | string[],
   mimeType: string
@@ -1386,22 +1435,24 @@ FAX:+81-3-3370-8917
 }`,
     };
 
-    const response = await ai.models.generateContent({
-      model: invoiceOcrModel,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            ...imageParts,
-            instructionPart,
-          ],
-        },
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: businessCardSchema,
+    const response = await generateGeminiWithRetry(() =>
+  ai.models.generateContent({
+    model: invoiceOcrModel,
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          ...imageParts,
+          instructionPart,
+        ],
       },
-    });
+    ],
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: businessCardSchema,
+    },
+  })
+);
 
     const rawText = response.text?.trim() ?? '';
 

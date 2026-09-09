@@ -162,6 +162,10 @@ const pdfToImageBase64List = async (file: File): Promise<string[]> => {
       );
     }
 
+    console.log(
+  `[BusinessCard OCR] PDF page ${pageNumber} preview:`,
+  dataUrl
+);
     images.push(base64);
 
     page.cleanup();
