@@ -24,6 +24,7 @@ const INQUIRY_TYPE_LABELS: Record<string, string> = {
   'sustainability-report': 'サステナビリティレポート作成',
   'planning-editing': '企画編集について',
   'office-support': '事務局作業のお手伝い',
+  'secretariat': '事務局',
   'web-production': 'Web制作について',
   'system-development': 'システム開発について',
   'goods-production': 'オリジナルグッズ制作',
