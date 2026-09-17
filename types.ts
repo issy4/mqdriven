@@ -227,6 +227,22 @@ export interface CustomerContact {
 
   createdAt?: string | null;
   updatedAt?: string | null;
+
+  followStatus?: string | null;
+  lastContactedAt?: string | null;
+  nextActionDate?: string | null;
+  nextActionNote?: string | null;
+}
+
+export interface CustomerLinkCandidate {
+  id: string;
+  customerCode?: string | null;
+  companyName: string;
+  companyNameKana?: string | null;
+  phoneNumber?: string | null;
+  address1?: string | null;
+  matchType?: string | null;
+  matchScore?: number | null;
 }
 
 export interface CustomerRank extends LooseRecord {

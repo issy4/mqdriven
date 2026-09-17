@@ -2,7 +2,7 @@ import { getSupabase, getSupabaseFunctionHeaders } from './supabaseClient';
 import { sendApprovalNotification, sendApprovalRouteCreatedNotification } from './notificationService';
 import { enrichCustomerData } from './geminiService';
 import { createClient } from '@supabase/supabase-js';
-import { CustomerContact } from '../types';
+import { CustomerContact, CustomerLinkCandidate } from '../types';
 import type { SupabaseClient as SupabaseClientType } from '@supabase/supabase-js';
 import type { PostgrestError } from '@supabase/supabase-js';
 import { validateKatakana } from '../utils/katakanaValidation';
@@ -6476,6 +6476,82 @@ export const createCustomerContact = async (
   };
 };
 
+export const getCustomerContacts = async (): Promise<CustomerContact[]> => {
+  const supabase = getSupabase();
+
+  const pageSize = 1000;
+  let from = 0;
+  let allRows: any[] = [];
+
+  while (true) {
+    const to = from + pageSize - 1;
+
+    const { data, error } = await supabase
+      .from('customer_contacts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      console.error('Failed to fetch customer contacts:', error);
+      throw new Error(
+        `名刺連絡先の取得に失敗しました。${error.message ? ` ${error.message}` : ''}`
+      );
+    }
+
+    const rows = data || [];
+    allRows = [...allRows, ...rows];
+
+    if (rows.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
+  }
+
+  return allRows.map(row => ({
+    id: row.id,
+    originalCustomerId: row.original_customer_id,
+    customerId: row.customer_id,
+
+    companyName: row.company_name,
+    companyNameKana: row.company_name_kana,
+    customerCode: row.customer_code,
+
+    personName: row.person_name,
+    personNameKana: row.person_name_kana,
+    personTitle: row.person_title,
+    department: row.department,
+
+    email: row.email,
+    phoneNumber: row.phone_number,
+    mobileNumber: row.mobile_number,
+    faxNumber: row.fax_number,
+
+    postalCode: row.postal_code,
+    address1: row.address_1,
+    address2: row.address_2,
+    websiteUrl: row.website_url,
+
+    businessEvent: row.business_event,
+    receivedByEmployeeCode: row.received_by_employee_code,
+    source: row.source,
+
+    allowEmailMarketing: row.allow_email_marketing,
+    emailMarketingStatus: row.email_marketing_status,
+
+    followStatus: row.follow_status,
+    lastContactedAt: row.last_contacted_at,
+    nextActionDate: row.next_action_date,
+    nextActionNote: row.next_action_note,
+
+    memo: row.memo,
+
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+};
+
 // =====================================================================
 // 受注台帳・目標管理 (Order Ledger / Sales Target Management)
 // =====================================================================
@@ -6929,4 +7005,187 @@ export const saveSalesAnnualTarget = async (params: {
     );
 
   ensureSupabaseSuccess(error, 'Failed to save sales annual target');
+};
+
+export const updateCustomerContact = async (
+  id: string,
+  contact: Partial<CustomerContact>
+): Promise<CustomerContact> => {
+  const supabase = getSupabase();
+
+  const payload = {
+    company_name: contact.companyName,
+    company_name_kana: contact.companyNameKana,
+    customer_id: contact.customerId,
+    customer_code: contact.customerCode,
+
+    person_name: contact.personName,
+    person_name_kana: contact.personNameKana,
+    person_title: contact.personTitle,
+    department: contact.department,
+
+    email: contact.email,
+    phone_number: contact.phoneNumber,
+    mobile_number: contact.mobileNumber,
+    fax_number: contact.faxNumber,
+
+    postal_code: contact.postalCode,
+    address_1: contact.address1,
+    address_2: contact.address2,
+    website_url: contact.websiteUrl,
+
+    business_event: contact.businessEvent,
+    received_by_employee_code: contact.receivedByEmployeeCode,
+    source: contact.source,
+
+    allow_email_marketing: contact.allowEmailMarketing,
+    email_marketing_status: contact.emailMarketingStatus,
+
+    follow_status: contact.followStatus,
+    last_contacted_at: contact.lastContactedAt,
+    next_action_date: contact.nextActionDate,
+    next_action_note: contact.nextActionNote,
+
+    memo: contact.memo,
+    updated_at: new Date().toISOString(),
+  };
+
+  const cleanPayload = Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined)
+  );
+
+  const { data, error } = await supabase
+    .from('customer_contacts')
+    .update(cleanPayload)
+    .eq('id', id)
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('Failed to update customer contact:', error);
+    throw new Error(
+      `名刺連絡先の更新に失敗しました。${error.message ? ` ${error.message}` : ''}`
+    );
+  }
+
+  return {
+    id: data.id,
+    originalCustomerId: data.original_customer_id,
+    customerId: data.customer_id,
+
+    companyName: data.company_name,
+    companyNameKana: data.company_name_kana,
+    customerCode: data.customer_code,
+
+    personName: data.person_name,
+    personNameKana: data.person_name_kana,
+    personTitle: data.person_title,
+    department: data.department,
+
+    email: data.email,
+    phoneNumber: data.phone_number,
+    mobileNumber: data.mobile_number,
+    faxNumber: data.fax_number,
+
+    postalCode: data.postal_code,
+    address1: data.address_1,
+    address2: data.address_2,
+    websiteUrl: data.website_url,
+
+    businessEvent: data.business_event,
+    receivedByEmployeeCode: data.received_by_employee_code,
+    source: data.source,
+
+    allowEmailMarketing: data.allow_email_marketing,
+    emailMarketingStatus: data.email_marketing_status,
+
+    followStatus: data.follow_status,
+    lastContactedAt: data.last_contacted_at,
+    nextActionDate: data.next_action_date,
+    nextActionNote: data.next_action_note,
+
+    memo: data.memo,
+
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
+};
+
+export const searchCustomerLinkCandidates = async (
+  keyword: string
+): Promise<CustomerLinkCandidate[]> => {
+  const supabase = getSupabase();
+
+  const q = keyword.trim();
+
+  if (!q) {
+    return [];
+  }
+
+  const { data, error } = await supabase.rpc(
+    'search_customer_link_candidates',
+    {
+      p_keyword: q,
+    }
+  );
+
+  if (error) {
+    console.error('Failed to search customer link candidates:', error);
+    throw new Error(
+      `正式顧客候補の検索に失敗しました。${error.message ? ` ${error.message}` : ''}`
+    );
+  }
+
+  return (data || []).map(row => ({
+    id: row.id,
+    customerCode: row.customer_code,
+    companyName: row.customer_name,
+    companyNameKana: row.customer_name_kana,
+    phoneNumber: row.phone_number,
+    address1: row.address_1,
+  }));
+};
+
+export const findAutoLinkCustomerCandidate = async (
+  companyName: string
+): Promise<CustomerLinkCandidate | null> => {
+  const supabase = getSupabase();
+
+  const q = companyName.trim();
+
+  if (!q) {
+    return null;
+  }
+
+  const { data, error } = await supabase.rpc(
+    'find_auto_link_customer_candidate',
+    {
+      p_company_name: q,
+    }
+  );
+
+  if (error) {
+    console.error('Failed to find auto link customer candidate:', error);
+    return null;
+  }
+
+  const rows = data || [];
+
+  // 高確度候補が1件だけなら自動紐づけ
+  if (rows.length !== 1) {
+    return null;
+  }
+
+  const row = rows[0];
+
+  return {
+    id: row.id,
+    customerCode: row.customer_code,
+    companyName: row.customer_name,
+    companyNameKana: row.customer_name_kana,
+    phoneNumber: row.phone_number,
+    address1: row.address_1,
+    matchType: row.match_type,
+    matchScore: row.match_score,
+  };
 };

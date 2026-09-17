@@ -16,6 +16,19 @@ import SortableHeader from '../ui/SortableHeader';
 import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu';
 import LeadPdfImportModal, { ExtractedLead } from '../LeadPdfImportModal';
 
+const INQUIRY_TYPE_LABELS: Record<string, string> = {
+  'print-estimate': '印刷に関するお見積り',
+  'logistics-estimate': '物流に関するお見積り',
+  'eco-print-estimate': '環境印刷に関するお見積り',
+  'sdgs-support': 'SDGs支援について',
+  'sustainability-report': 'サステナビリティレポート作成',
+  'planning-editing': '企画編集について',
+  'secretariat': '事務局作業のお手伝い',
+  'web-production': 'Web制作について',
+  'system-development': 'システム開発について',
+  'goods-production': 'オリジナルグッズ制作',
+};
+
 interface LeadManagementPageProps {
   leads: Lead[];
   searchTerm: string;
@@ -625,10 +638,20 @@ const LeadManagementPage: React.FC<LeadManagementPageProps> = ({ leads, searchTe
                                             )}
                                         </td>
                                         <td className="px-3 py-2.5 whitespace-nowrap">
-                                            {lead.inquiryTypes && lead.inquiryTypes.length > 0
-                                                ? <div className="flex flex-wrap gap-1">{lead.inquiryTypes.slice(0, 2).map(type => <span key={type} className="px-2 py-0.5 text-xs rounded-full bg-slate-200 dark:bg-slate-600">{type}</span>)}</div>
-                                                : (lead.inquiryType || '-')
-                                            }
+                                            {lead.inquiryTypes && lead.inquiryTypes.length > 0 ? (
+  <div className="flex flex-wrap gap-1">
+    {lead.inquiryTypes.slice(0, 2).map(type => (
+      <span
+        key={type}
+        className="px-2 py-0.5 text-xs rounded-full bg-slate-200 dark:bg-slate-600"
+      >
+        {INQUIRY_TYPE_LABELS[type] || type}
+      </span>
+    ))}
+  </div>
+) : (
+  '-'
+)}
                                         </td>
                                         <td className="px-3 py-2.5 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
                                             {(() => {
