@@ -43,6 +43,8 @@ Google OAuth callbackだけはGoogleからのリダイレクトであり、Supab
 
 ## 3. セキュリティ原則
 
+`public.users.auth_user_id` は現行アプリコードでは未使用であり、今回の移行で新たに正式な識別子として採用する。
+
 1. 通常関数は `verify_jwt=true` とし、関数内でも `auth.getUser(token)` を実行する。`atob` でJWT本文を読む実装は禁止する。
 2. 所有者Auth IDは検証済み `user.id` だけから導出する。本文・クエリの `user_id` は受け付けない。
 3. DBアクセスは `SUPABASE_ANON_KEY` またはpublishable keyと呼出元JWTを使い、RLSを適用する。
@@ -111,7 +113,7 @@ const authUserId = user.id;
 
 ### 5.1 採用案
 
-既存 `public.users.auth_user_id` を正規の対応列として使う。
+現行アプリコードでは未使用の `public.users.auth_user_id` を、今回の移行で正規の対応列として新たに採用する。
 
 - `users.id`: 業務上の社員ID。既存申請・社員参照との互換性を維持する。
 - `users.auth_user_id`: `auth.users.id`。認証主体との1対1対応。
@@ -119,6 +121,8 @@ const authUserId = user.id;
 - `calendar_events.employee_user_id`: 表示・業務結合用の社員IDを保持する。
 
 `users.auth_user_id` は一意かつ、有効行ではNOT NULL、`auth.users(id)` への参照整合性を持たせる。既存行に不正参照があるため、NOT NULL／FKは監査と補正完了後に段階適用する。
+
+設定済みかつ有効な11件のリンクについても、移行前に人手で再監査する。各リンクを誰が設定したか確認し、Auth IDと社員IDの対応を社員台帳と突合する。設定者または根拠を確認できないリンクや、社員台帳と一致しないリンクは有効とみなさず、管理者確認後に補正する。
 
 また、`users` の既存 `authenticated ALL` ポリシーを残したまま `auth_user_id` を認可判断に使ってはならない。移行前に次を行う。
 
@@ -185,6 +189,10 @@ select
 メール一致は移行候補抽出にだけ使い、自動確定しない。石野さんまたは管理者が社員台帳と照合して明示的に `auth_user_id` を設定する。
 
 ## 6. DBスキーマ、RLS、ACL
+
+### 6.0 `public.users` 自己アクセスRLSの置換前提
+
+`public.users` の `rls_migration_authenticated_all` を削除する際は、同時に `auth_user_id = auth.uid()` を条件とする自己アクセスポリシーへ置換する。置換は、新規ポリシーの追加または既存の `users_self_select`／`users_self_update`／`users_self_insert` 3ポリシーの条件修正として行う。広域ポリシーだけを先に削除してはならず、この置換完了を6.2節の `calendar_events` 基本RLS着手の前提条件とする。
 
 ### 6.1 `calendar_events` の移行方式
 
@@ -594,6 +602,7 @@ https://pkwajxeegidydalcannz.supabase.co/functions/v1/google-oauth-callback-v2
 | 旧 `calendar_events` の業務上必要な保持範囲と保存期間 | 石野さん、社長 |
 | 旧Google tokenを移送せず再認可とする方針の承認 | 石野さん、社長 |
 | `users.auth_user_id` の不正参照5件と未対応者の正しい対応 | 石野さんまたは社員台帳管理者 |
+| `public.profiles` が現行のAuth ID対応設計とは無関係と判断できる根拠 | 未確認のため保留（石野さん回答待ち） |
 | `users` の現行広域RLSを絞る際、社員管理画面が更新を必要とする列 | 石野さん、実装担当 |
 | `role='admin'` をカレンダー管理権限として使ってよいか。人事権限を別にするか | 社長、石野さん |
 | mbox最大サイズ・保存要否・監査ログ保持期間 | 社長、石野さん |
@@ -625,3 +634,5 @@ https://pkwajxeegidydalcannz.supabase.co/functions/v1/google-oauth-callback-v2
 6. 旧関数停止までの監視期間と、停止後の緊急対応手順。
 
 以上の決定と石野さんレビューが揃うまでは、設計完了・実装未着手の状態を維持する。
+
+レビュー反映済み（2026-09-17、Claude独立レビュー8章対応）
