@@ -145,6 +145,8 @@ Supabase側では`gemini-generate`がACTIVE、version 2、`verify_jwt=true`で�
 - 移行の設計案はこちら（社長側のClaude/Codex）で作成し、石野さんにレビューしてもらう進め方でよいでしょうか。それとも石野さん側で実装しますか。
 - Supabase Edge Functionsの`verify_jwt`設定は、どの構成ファイルまたは配備手順を正本にしていますか。
 - `api/users`が返す氏名、メール、役職、在籍状態を、未ログイン状態で参照できる業務要件はありますか。
+- `public.users.auth_user_id`が設定済みの行は16件のみで、現行アプリコードからは参照されていません（ログイン照合は`users.id`と`auth.users.id`の直接比較で行われており、77件中0件一致）。この16件はどなたが何の目的で設定したものでしょうか。移行の正式な識別子として採用する前提として、由来を確認させてください。
+- `handle_new_user()`トリガーが書き込んでいる`public.profiles`テーブル（39件、`auth.users.id`と0件一致）は、今回のAuth ID対応設計とは無関係と考えてよいでしょうか。用途をご存じであれば教えてください。
 
 回答：
 
