@@ -64,3 +64,4 @@ aisanbo-*.json
 metadata.json
 
 .vercel
+.env*

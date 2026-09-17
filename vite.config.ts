@@ -12,13 +12,12 @@ export default defineConfig(({ mode }) => {
   // to ensure the client build always has the credentials.
   const supabaseUrl = env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL || '';
   const supabaseKey = env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.SUPABASE_KEY || '';
-  const geminiKey = env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || '';
   const aiOff = env.VITE_AI_OFF || '';
 
   console.log('Vite env resolution:', {
     SUPABASE_URL: supabaseUrl ? '***SET***' : 'NOT SET',
     SUPABASE_KEY: supabaseKey ? '***SET***' : 'NOT SET',
-    GEMINI_API_KEY: geminiKey ? '***SET***' : 'NOT SET',
+    GEMINI_API_KEY: 'SERVER_SIDE_ONLY',
     VITE_AI_OFF: aiOff,
   });
 
@@ -26,7 +25,6 @@ export default defineConfig(({ mode }) => {
     define: {
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(supabaseKey),
-      'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(geminiKey),
       'import.meta.env.VITE_AI_OFF': JSON.stringify(aiOff),
     },
     server: {
