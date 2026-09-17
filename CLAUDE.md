@@ -1,8 +1,14 @@
 # CLAUDE.md - AI向けプロジェクトガイドライン
 
-## 最新セッション引継ぎ（2026-09-04）
+## 最新セッション引継ぎ（2026-09-17）
 
-MQ ERPのGemini API安全化を続ける場合は、作業前に次をすべて読むこと。
+ERP名刺管理・カレンダー移行を続ける場合は、作業前に次を順に読むこと。
+
+1. `docs/HANDOFF_2026-09-17_ERP_VERIFICATION_STATUS.md`
+2. `docs/CLAUDE_REVIEW_2026-09-17_CALENDAR_MIGRATION_DESIGN.md`（独立レビュー結果：総合判定「要修正」）
+3. `docs/HANDOFF_2026-09-17_CALENDAR_MIGRATION_REVIEW_AND_PR.md`（レビュー後の状況とPR #144、次の未着手事項）
+
+Gemini API安全化（2026-09-04分）を続ける場合は、次を読むこと。
 
 1. `docs/HANDOFF_2026-09-04_AI_GATEWAY.md`
 2. `docs/architecture/AI_GATEWAY_REDESIGN.md`

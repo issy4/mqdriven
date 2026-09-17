@@ -1,5 +1,8 @@
 # 引き継ぎ 2026年9月17日 ERP名刺管理検証と本番境界確認
 
+> **続報あり**: 本ファイルの「次の安全な順序」1番（独立レビュー）は完了した。結果とその後のPR作成は
+> `docs/HANDOFF_2026-09-17_CALENDAR_MIGRATION_REVIEW_AND_PR.md` を参照。
+
 ## 次回最初に読むもの
 
 1. `docs/HANDOFF_2026-09-17_ERP_VERIFICATION_STATUS.md`
