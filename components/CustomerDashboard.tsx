@@ -107,116 +107,95 @@ const CustomerDashboard: React.FC<
     getCurrentFiscalRange();
 
   useEffect(() => {
-    let cancelled = false;
+  if (activeTab !== 'overview') {
+    return;
+  }
 
-    const loadData = async () => {
-      setLoading(true);
+  let cancelled = false;
 
-      setSalesSummary(null);
-      setSalesError(null);
+  const loadData = async () => {
+    setLoading(true);
 
-      setInfo(null);
-      setInfoError(null);
+    setSalesSummary(null);
+    setSalesError(null);
 
-      console.log(
-        '[CustomerDashboard] customer:',
-        {
-          id: customer.id,
-          code: customer.customerCode,
-          name: customer.customerName,
-        }
+    setInfo(null);
+    setInfoError(null);
+
+    const now = new Date();
+
+    const fiscalStartYear =
+      now.getMonth() >= 5
+        ? now.getFullYear()
+        : now.getFullYear() - 1;
+
+    const startDate = `${fiscalStartYear}-06-01`;
+    const endDate = `${fiscalStartYear + 1}-05-31`;
+
+    const [
+      customerInfoResult,
+      salesResult,
+    ] = await Promise.allSettled([
+      getCustomerInfo(customer.id),
+
+      getCustomerSalesSummaryV2(
+        customer.id,
+        startDate,
+        endDate
+      ),
+    ]);
+
+    if (cancelled) {
+      return;
+    }
+
+    if (
+      customerInfoResult.status ===
+      'fulfilled'
+    ) {
+      setInfo(customerInfoResult.value);
+    } else {
+      console.error(
+        '[CustomerDashboard] customer info error:',
+        customerInfoResult.reason
       );
 
-      console.log(
-        '[CustomerDashboard] fiscal range:',
-        fiscalRange.startDate,
-        fiscalRange.endDate
+      setInfoError(
+        customerInfoResult.reason instanceof Error
+          ? customerInfoResult.reason.message
+          : '顧客カルテ情報を取得できませんでした。'
+      );
+    }
+
+    if (
+      salesResult.status ===
+      'fulfilled'
+    ) {
+      setSalesSummary(
+        salesResult.value
+      );
+    } else {
+      console.error(
+        '[CustomerDashboard] sales summary error:',
+        salesResult.reason
       );
 
-      const [
-        customerInfoResult,
-        salesResult,
-      ] = await Promise.allSettled([
-        getCustomerInfo(
-          customer.id
-        ),
+      setSalesError(
+        salesResult.reason instanceof Error
+          ? salesResult.reason.message
+          : '売上実績を取得できませんでした。'
+      );
+    }
 
-        getCustomerSalesSummaryV2(
-          customer.id,
-          fiscalRange.startDate,
-          fiscalRange.endDate
-        ),
-      ]);
+    setLoading(false);
+  };
 
-      if (cancelled) {
-        return;
-      }
+  loadData();
 
-      /**
-       * カルテ情報
-       */
-      if (
-        customerInfoResult.status ===
-        'fulfilled'
-      ) {
-        setInfo(
-          customerInfoResult.value
-        );
-      } else {
-        console.error(
-          '[CustomerDashboard] customer info error:',
-          customerInfoResult.reason
-        );
-
-        setInfoError(
-          customerInfoResult.reason
-            instanceof Error
-            ? customerInfoResult.reason
-                .message
-            : '顧客カルテ情報を取得できませんでした。'
-        );
-      }
-
-      /**
-       * 売上情報
-       */
-      if (
-        salesResult.status ===
-        'fulfilled'
-      ) {
-        console.log(
-          '[CustomerDashboard] sales summary:',
-          salesResult.value
-        );
-
-        setSalesSummary(
-          salesResult.value
-        );
-      } else {
-        console.error(
-          '[CustomerDashboard] sales summary error:',
-          salesResult.reason
-        );
-
-        setSalesError(
-          salesResult.reason instanceof
-            Error
-            ? salesResult.reason.message
-            : '売上実績を取得できませんでした。'
-        );
-      }
-
-      setLoading(false);
-    };
-
-    loadData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    customer.id,
-  ]);
+  return () => {
+    cancelled = true;
+  };
+}, [customer.id, activeTab]);
 
   /**
    * 顧客マスタを優先し、
