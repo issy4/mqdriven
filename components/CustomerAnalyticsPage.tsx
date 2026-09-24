@@ -64,13 +64,13 @@ const getCurrentFiscalRange = (
   const year = baseDate.getFullYear();
   const month = baseDate.getMonth();
 
-  // 8月開始 / 7月終了
+  // 6月開始 / 翌年5月終了
   const fiscalStartYear =
-    (month >= 7 ? year : year - 1) + offset;
+    (month >= 5 ? year : year - 1) + offset;
 
   return {
-    startDate: `${fiscalStartYear}-08-01`,
-    endDate: `${fiscalStartYear + 1}-07-31`,
+    startDate: `${fiscalStartYear}-06-01`,
+    endDate: `${fiscalStartYear + 1}-05-31`,
   };
 };
 
@@ -117,7 +117,7 @@ const getRangeForPreset = (
 
     case 'all':
       return {
-        startDate: null,
+        startDate: '2020-01-01',
         endDate: null,
       };
 
@@ -588,18 +588,24 @@ const CustomerAnalyticsPage: React.FC<
   );
 
   const periodLabel = useMemo(() => {
-    if (!startDate && !endDate) {
-      return '全期間';
-    }
+  if (!startDate && !endDate) {
+    return '全期間';
+  }
 
-    if (startDate && endDate) {
-      return `${formatDate(
-        startDate
-      )} ～ ${formatDate(endDate)}`;
-    }
+  if (startDate && endDate) {
+    return `${formatDate(startDate)} ～ ${formatDate(endDate)}`;
+  }
 
-    return '';
-  }, [startDate, endDate]);
+  if (startDate && !endDate) {
+    return `${formatDate(startDate)} ～`;
+  }
+
+  if (!startDate && endDate) {
+    return `～ ${formatDate(endDate)}`;
+  }
+
+  return '';
+}, [startDate, endDate]);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto bg-slate-50 p-4 dark:bg-slate-900 sm:p-6">
