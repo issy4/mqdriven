@@ -33,12 +33,14 @@ export const DropdownMenu: React.FC<DropdownMenuProps> = ({ children }) => {
       <button
   type="button"
   onClick={toggleOpen}
-  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600"
   aria-haspopup="true"
   aria-expanded={isOpen}
   aria-label="操作メニュー"
 >
-  <MoreHorizontal className="w-5 h-5" />
+  <span className="text-lg font-bold leading-none tracking-wider">
+    •••
+  </span>
 </button>
       {isOpen && (
         <div 
