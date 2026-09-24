@@ -209,9 +209,13 @@ const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ customer, onBack 
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Profit (MQ)</span>
                   </div>
                   <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-1">
-                    {info?.mq ? formatJPY(Number(info.mq)) : '¥0'}
-                  </h3>
-                  <p className="text-sm text-slate-500">当期累計粗利 (M率: {info?.mRate || '0'}%)</p>
+  {formatJPY(Number(salesSummary?.mq ?? 0))}
+</h3>
+
+<p className="text-sm text-slate-500">
+  当期累計粗利
+  （M率: {Number(salesSummary?.mq_rate ?? 0).toFixed(2)}%）
+</p>
                 </div>
               </div>
 
