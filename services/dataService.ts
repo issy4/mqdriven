@@ -1794,6 +1794,44 @@ export const getCustomers = async (): Promise<Customer[]> => {
     return customers;
 };
 
+export interface CustomerSalesSummaryV2 {
+    customer_uuid: string;
+    invoice_count: number;
+    sales_amount: number;
+    variable_cost: number;
+    mq: number;
+    mq_rate: number;
+    last_sales_date: string | null;
+}
+
+export const getCustomerSalesSummaryV2 = async (
+    customerId: string,
+    startDate: string,
+    endDate: string
+): Promise<CustomerSalesSummaryV2 | null> => {
+    const supabase = getSupabase();
+
+    const { data, error } = await supabase.rpc(
+        'get_customer_sales_summary_v2',
+        {
+            p_customer_uuid: customerId,
+            p_start_date: startDate,
+            p_end_date: endDate,
+        }
+    );
+
+    ensureSupabaseSuccess(
+        error,
+        'Failed to fetch customer sales summary'
+    );
+
+    if (!data || data.length === 0) {
+        return null;
+    }
+
+    return data[0] as CustomerSalesSummaryV2;
+};
+
 export const addCustomer = async (customerData: Partial<Customer>): Promise<Customer> => {
     const supabase = getSupabase();
     const payload: Partial<Customer> = {
