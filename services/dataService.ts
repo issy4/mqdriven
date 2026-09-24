@@ -1749,14 +1749,48 @@ const mapCustomerBudgetSummary = (row: any): CustomerBudgetSummary => ({
 
 export const getCustomers = async (): Promise<Customer[]> => {
     const supabase = getSupabase();
-    // Fetch customers ordered by latest created_at.
-    const { data, error } = await supabase
-        .from('customers')
-        .select('*')
-        .order('created_at', { ascending: false });
-    ensureSupabaseSuccess(error, 'Failed to fetch customers');
-    const customers = (data || []).map(dbCustomerToCustomer);
-    console.log('[dataService] customers fetched', { count: customers.length });
+
+    const PAGE_SIZE = 1000;
+    const allRows: any[] = [];
+
+    let from = 0;
+
+    while (true) {
+        const to = from + PAGE_SIZE - 1;
+
+        const { data, error } = await supabase
+            .from('customers')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: true })
+            .range(from, to);
+
+        ensureSupabaseSuccess(
+            error,
+            'Failed to fetch customers'
+        );
+
+        const rows = data || [];
+
+        allRows.push(...rows);
+
+        if (rows.length < PAGE_SIZE) {
+            break;
+        }
+
+        from += PAGE_SIZE;
+    }
+
+    const customers =
+        allRows.map(dbCustomerToCustomer);
+
+    console.log(
+        '[dataService] customers fetched',
+        {
+            count: customers.length
+        }
+    );
+
     return customers;
 };
 
