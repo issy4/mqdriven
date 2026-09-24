@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Customer, CustomerInfo } from '../types';
-import { getCustomerInfo, getEstimates } from '../services/dataService';
+import {
+  getCustomerInfo,
+  getCustomerSalesSummaryV2,
+  type CustomerSalesSummaryV2,
+} from '../services/dataService';
 import CustomerInfoForm from './forms/CustomerInfoForm';
 import { User, Phone, Globe, MapPin, Calendar, CreditCard, TrendingUp, BookOpen, Clock, ChevronLeft } from './Icons';
 import { formatJPY } from '../utils';
@@ -12,15 +16,70 @@ interface CustomerDashboardProps {
 
 const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ customer, onBack }) => {
   const [info, setInfo] = useState<CustomerInfo | null>(null);
+
+  const [salesSummary, setSalesSummary] =
+    useState<CustomerSalesSummaryV2 | null>(null);
+
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'karte' | 'history'>('overview');
+
+  const [activeTab, setActiveTab] =
+    useState<'overview' | 'karte' | 'history'>('overview');
 
   useEffect(() => {
-    getCustomerInfo(customer.id).then(data => {
-      setInfo(data);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, [customer.id]);
+  let cancelled = false;
+
+  const loadData = async () => {
+    setLoading(true);
+
+    try {
+      const now = new Date();
+
+      const fiscalStartYear =
+        now.getMonth() >= 5
+          ? now.getFullYear()
+          : now.getFullYear() - 1;
+
+      const startDate =
+        `${fiscalStartYear}-06-01`;
+
+      const endDate =
+        `${fiscalStartYear + 1}-05-31`;
+
+      const [
+        customerInfo,
+        summary,
+      ] = await Promise.all([
+        getCustomerInfo(customer.id),
+        getCustomerSalesSummaryV2(
+          customer.id,
+          startDate,
+          endDate
+        ),
+      ]);
+
+      if (cancelled) return;
+
+      setInfo(customerInfo);
+      setSalesSummary(summary);
+
+    } catch (error) {
+      console.error(
+        '[CustomerDashboard] Failed to load customer data:',
+        error
+      );
+    } finally {
+      if (!cancelled) {
+        setLoading(false);
+      }
+    }
+  };
+
+  loadData();
+
+  return () => {
+    cancelled = true;
+  };
+}, [customer.id]);
 
   return (
     <div className="max-w-7xl mx-auto pb-20">
@@ -129,9 +188,17 @@ const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ customer, onBack 
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Revenue (PQ)</span>
                   </div>
                   <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-1">
-                    {info?.pq ? formatJPY(Number(info.pq)) : '¥0'}
-                  </h3>
-                  <p className="text-sm text-slate-500">当期累計売上高</p>
+  {formatJPY(Number(salesSummary?.sales_amount ?? 0))}
+</h3>
+
+<p className="text-sm text-slate-500">
+  当期累計売上高
+  {salesSummary && (
+    <span className="ml-2">
+      （{Number(salesSummary.invoice_count).toLocaleString('ja-JP')}件）
+    </span>
+  )}
+</p>
                 </div>
 
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm bg-gradient-to-br from-white to-emerald-50/50">
