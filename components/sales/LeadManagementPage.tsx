@@ -673,7 +673,10 @@ const LeadManagementPage: React.FC<LeadManagementPageProps> = ({ leads, searchTe
                                             })()}
                                         </td>
                                         <td className="px-3 py-2.5 text-center">
-                                            <div className="flex justify-center items-center opacity-0 group-hover:opacity-100 transition-opacity focus-within:opacity-100" onClick={e => e.stopPropagation()}>
+                                            <div
+                                              className="flex justify-center items-center"
+                                              onClick={e => e.stopPropagation()}
+                                            >
                                                 <DropdownMenu>
                                                     <DropdownMenuItem onClick={() => handleRowClick(lead)}>
                                                         <Eye className="w-4 h-4" /> 詳細表示
