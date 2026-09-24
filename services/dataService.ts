@@ -6269,6 +6269,52 @@ export const getCustomerSalesRankings = async (): Promise<any[]> => {
     return data || [];
 };
 
+export interface CustomerSalesRankingV2 {
+    rank: number;
+    customer_uuid: string;
+    customer_code: string | null;
+    customer_name: string | null;
+    invoice_count: number;
+    sales_amount: number;
+    variable_cost: number;
+    mq: number | null;
+    mq_rate: number | null;
+    composition_rate: number;
+    last_sales_date: string | null;
+    mq_available: boolean;
+}
+
+export const getCustomerSalesRankingsV2 = async (
+    startDate: string | null,
+    endDate: string | null,
+    salesUserId: string | null = null
+): Promise<CustomerSalesRankingV2[]> => {
+    const supabase = getSupabase();
+
+    console.log(
+        '[dataService] getCustomerSalesRankingsV2:',
+        startDate,
+        endDate,
+        salesUserId
+    );
+
+    const { data, error } = await supabase.rpc(
+        'get_customer_sales_ranking_v2',
+        {
+            p_start_date: startDate,
+            p_end_date: endDate,
+            p_sales_user_id: salesUserId,
+        }
+    );
+
+    ensureSupabaseSuccess(
+        error,
+        'Failed to fetch customer sales rankings V2'
+    );
+
+    return (data || []) as CustomerSalesRankingV2[];
+};
+
 export const getMachines = async (): Promise<Machine[]> => {
     const supabase = getSupabase();
     console.log('[dataService] getMachines: fetching machines');
