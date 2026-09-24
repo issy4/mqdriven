@@ -521,7 +521,12 @@ const LeadManagementPage: React.FC<LeadManagementPageProps> = ({ leads, searchTe
                                     <SortableHeader sortKey="status" label="ステータス" sortConfig={sortConfig} requestSort={requestSort} />
                                     <SortableHeader sortKey="inquiryTypes" label="問い合わせ種別" sortConfig={sortConfig} requestSort={requestSort} />
                                     <th scope="col" className="px-3 py-2 font-medium text-center whitespace-nowrap">次のアクション</th>
-                                    <th scope="col" className="px-3 py-2 font-medium text-center">操作</th>
+                                    <th
+                                      scope="col"
+                                      className="px-3 py-2 font-medium text-center whitespace-nowrap min-w-[72px]"
+                                    >
+                                      操作
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -672,7 +677,7 @@ const LeadManagementPage: React.FC<LeadManagementPageProps> = ({ leads, searchTe
                                                 );
                                             })()}
                                         </td>
-                                        <td className="px-3 py-2.5 text-center">
+                                        <td className="px-3 py-2.5 text-center whitespace-nowrap min-w-[72px]">
                                             <div
                                               className="flex justify-center items-center"
                                               onClick={e => e.stopPropagation()}

@@ -31,16 +31,18 @@ export const DropdownMenu: React.FC<DropdownMenuProps> = ({ children }) => {
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={toggleOpen}
-        className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400"
-        aria-haspopup="true"
-        aria-expanded={isOpen}
-      >
-        <MoreHorizontal className="w-5 h-5" />
-      </button>
+  type="button"
+  onClick={toggleOpen}
+  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+  aria-haspopup="true"
+  aria-expanded={isOpen}
+  aria-label="操作メニュー"
+>
+  <MoreHorizontal className="w-5 h-5" />
+</button>
       {isOpen && (
         <div 
-          className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-xl z-10 border border-slate-200 dark:border-slate-700"
+          className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-xl z-50 border border-slate-200 dark:border-slate-700"
           onClick={() => setIsOpen(false)}
         >
           <div className="py-1" role="menu" aria-orientation="vertical">
