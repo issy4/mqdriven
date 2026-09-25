@@ -516,6 +516,13 @@ const CustomerAnalyticsPage: React.FC<
           toNumber(row.invoice_count),
         0
       );
+    
+    const variableCost =
+      rankings.reduce(
+        (sum, row) =>
+          sum + toNumber(row.variable_cost),
+        0
+      );
 
     const mq =
       isMqPeriodAvailable
@@ -536,6 +543,7 @@ const CustomerAnalyticsPage: React.FC<
     return {
       customerCount: rankings.length,
       salesAmount,
+      variableCost,
       invoiceCount,
       mq,
       mqRate,
@@ -853,56 +861,149 @@ const CustomerAnalyticsPage: React.FC<
         </div>
       </div>
 
-      {/* KPI */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          label="売上金額（PQ）"
-          value={formatJPY(
-            totals.salesAmount
-          )}
-          description={`${totals.customerCount.toLocaleString(
-            'ja-JP'
-          )}顧客`}
-        />
+      {/* VQ Graph */}
+<div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+  {/* Header */}
+  <div className="flex flex-col gap-2 border-b border-slate-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h2 className="text-lg font-bold text-slate-900">
+        VQグラフ
+      </h2>
 
-        <KpiCard
-          label="MQ"
-          value={
-            totals.mq === null
-              ? '—'
-              : formatJPY(
-                  totals.mq
-                )
-          }
-          description={
-            isMqPeriodAvailable
-              ? '基幹 margin を使用'
-              : '2020年以前を含むため非表示'
-          }
-        />
+      <p className="mt-1 text-sm text-slate-500">
+        PQ・VQ・MQの構成
+      </p>
+    </div>
 
-        <KpiCard
-          label="MQ率"
-          value={
-            totals.mqRate === null
-              ? '—'
-              : formatPercent(
-                  totals.mqRate
-                )
-          }
-          description="MQ ÷ PQ"
-        />
+    <div className="flex flex-wrap gap-2 text-sm">
+      <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
+        {totals.customerCount.toLocaleString('ja-JP')}顧客
+      </span>
 
-        <KpiCard
-          label="請求件数"
-          value={`${totals.invoiceCount.toLocaleString(
-            'ja-JP'
-          )}件`}
-          description={`${totals.customerCount.toLocaleString(
-            'ja-JP'
-          )}顧客`}
-        />
+      <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
+        {totals.invoiceCount.toLocaleString('ja-JP')}件
+      </span>
+    </div>
+  </div>
+
+  <div className="p-5">
+    <div className="grid min-h-[340px] grid-cols-1 overflow-hidden rounded-xl border border-slate-200 lg:grid-cols-2">
+
+      {/* PQ */}
+      <div className="flex min-h-[280px] flex-col justify-between bg-amber-300 p-7 lg:min-h-[340px]">
+        <div>
+          <div className="text-3xl font-black text-slate-900">
+            PQ
+          </div>
+
+          <div className="mt-1 text-sm font-medium text-slate-700">
+            売上金額
+          </div>
+        </div>
+
+        <div className="text-center">
+          <div className="text-4xl font-black tabular-nums text-slate-900 xl:text-5xl">
+            {formatJPY(totals.salesAmount)}
+          </div>
+        </div>
+
+        <div className="text-sm text-slate-700">
+          売上全体
+        </div>
       </div>
+
+      {/* Right side */}
+      <div className="flex min-h-[340px] flex-col">
+
+        {/* VQ */}
+        <div
+          className="flex min-h-[110px] flex-1 flex-col justify-center bg-red-300 px-7 py-5"
+          style={{
+            flexGrow:
+              totals.salesAmount > 0
+                ? Math.max(
+                    totals.variableCost / totals.salesAmount,
+                    0.15
+                  )
+                : 1,
+          }}
+        >
+          <div className="text-3xl font-black text-slate-900">
+            VQ
+          </div>
+
+          <div className="mt-2 text-center text-3xl font-black tabular-nums text-slate-900 xl:text-4xl">
+            {formatJPY(totals.variableCost)}
+          </div>
+
+          <div className="mt-1 text-center text-sm text-slate-700">
+            変動費
+          </div>
+        </div>
+
+        {/* MQ */}
+        <div
+          className="flex min-h-[110px] flex-1 flex-col justify-center bg-lime-300 px-7 py-5"
+          style={{
+            flexGrow:
+              totals.salesAmount > 0 && totals.mq !== null
+                ? Math.max(
+                    totals.mq / totals.salesAmount,
+                    0.15
+                  )
+                : 1,
+          }}
+        >
+          <div className="text-3xl font-black text-slate-900">
+            MQ
+          </div>
+
+          <div className="mt-2 text-center text-3xl font-black tabular-nums text-slate-900 xl:text-4xl">
+            {totals.mq === null
+              ? '—'
+              : formatJPY(totals.mq)}
+          </div>
+
+          <div className="mt-1 text-center text-sm text-slate-700">
+            粗利益
+          </div>
+        </div>
+
+        {/* M Rate */}
+        <div className="flex items-center justify-between bg-cyan-100 px-7 py-4">
+          <div className="text-2xl font-black text-slate-900">
+            M率
+          </div>
+
+          <div className="text-3xl font-black tabular-nums text-slate-900">
+            {totals.mqRate === null
+              ? '—'
+              : formatPercent(totals.mqRate)}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Formula */}
+    <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-500">
+      <span>
+        PQ ＝ 売上金額
+      </span>
+
+      <span>
+        VQ ＝ 変動費
+      </span>
+
+      <span>
+        MQ ＝ 粗利益
+      </span>
+
+      <span>
+        M率 ＝ MQ ÷ PQ
+      </span>
+    </div>
+  </div>
+</div>
 
       {/* Error */}
       {error && (
