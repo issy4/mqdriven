@@ -643,7 +643,11 @@ const App: React.FC = () => {
             });
         }
 
-        return [...customerSuggestions, ...jobSuggestions];
+        if (currentPage === 'sales_customers') {
+    return customerSuggestions;
+}
+
+return [...customerSuggestions, ...jobSuggestions];
     }, [currentPage, searchTerm, customers, jobs]);
 
     // Navigation and Modals
