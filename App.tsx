@@ -313,7 +313,7 @@ const PAGE_TITLES: Record<Page, string> = {
     analysis_dashboard: '起死回生プラン',
     sales_dashboard: '販売ダッシュボード',
     sales_leads: 'リード管理',
-    sales_customers: '取引先',
+    sales_customers: '顧客一覧',
     business_card_contacts: '名刺OCR・連絡先管理',
     sales_customers_chart: '顧客/売上ランキング',
     customer_dashboard: '顧客ダッシュボード',
@@ -408,7 +408,7 @@ const APPLICATION_FORM_PAGE_MAP: Partial<Record<string, Page>> = {
 
 const PRIMARY_ACTION_ENABLED_PAGES: Page[] = [
     'sales_leads',
-    'sales_customers',
+    //'sales_customers',
     'purchasing_orders',
     'inventory_management',
     'sales_estimates',

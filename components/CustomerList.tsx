@@ -361,17 +361,6 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, searchTerm, onSe
               {sortedCustomers.length > 0 ? `${startIndex}-${endIndex}件 / 全${sortedCustomers.length}件` : '0件'} {searchTerm ? <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded ml-2">検索: "{searchTerm}"</span> : ''}
             </div>
             <div className="flex items-center gap-3">
-          {onShowBulkOCR && (
-            <button
-              type="button"
-              onClick={onShowBulkOCR}
-              disabled={isAIOff}
-              className={`inline-flex items-center gap-2 rounded-md px-4 py-1.5 text-xs font-semibold text-white ${isAIOff ? 'bg-slate-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'
-                }`}
-            >
-              新規一括OCR
-            </button>
-          )}
           <button
             type="button"
             onClick={handleExportToSheets}
