@@ -359,7 +359,7 @@ export const investigateLeadCompany = async (
   companyName: string
 ): Promise<CompanyInvestigation> => {
   const ai = checkOnlineAndAIOff();
-  const modelWithSearch = "gemini-2.5-flash";
+  const modelWithSearch = "gemini-3.8-flash";
   return withRetry(async () => {
     const prompt = `企業名「${companyName}」について、その事業内容、最近のニュース、市場での評判を調査し、簡潔にまとめてください。`;
     const response = await ai.models.generateContent({
@@ -401,12 +401,12 @@ export const enrichCustomerData = async (
 - 代表電話番号 (phoneNumber)
 - 代表者名 (representative)`;
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-      },
-    });
+  model: "gemini-3.8-flash",
+  contents: prompt,
+  config: {
+    tools: [{ googleSearch: {} }],
+  },
+});
 
     let jsonStr = response.text.trim();
     if (jsonStr.startsWith("```json")) {
