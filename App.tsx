@@ -315,7 +315,7 @@ const PAGE_TITLES: Record<Page, string> = {
     sales_leads: 'リード管理',
     sales_customers: '取引先',
     business_card_contacts: '名刺OCR・連絡先管理',
-    sales_customers_chart: '顧客/お客様カルテ',
+    sales_customers_chart: '顧客/売上ランキング',
     customer_dashboard: '顧客ダッシュボード',
     sales_pipeline: 'パイプライン',
     sales_estimates: '見積管理',

@@ -623,7 +623,7 @@ const CustomerAnalyticsPage: React.FC<
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900 dark:text-white">
               <Trophy className="h-6 w-6 text-amber-500" />
-              顧客カルテ / ランキング分析
+              売上ランキング分析
             </h1>
 
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
