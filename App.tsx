@@ -408,7 +408,7 @@ const APPLICATION_FORM_PAGE_MAP: Partial<Record<string, Page>> = {
 
 const PRIMARY_ACTION_ENABLED_PAGES: Page[] = [
     'sales_leads',
-    'sales_customers',
+    //'sales_customers',
     'purchasing_orders',
     'inventory_management',
     'sales_estimates',
