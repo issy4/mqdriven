@@ -5,7 +5,8 @@ import EmptyState from './ui/EmptyState';
 import SortableHeader from './ui/SortableHeader';
 import { generateSalesEmail, enrichCustomerData } from '../services/geminiService';
 import { createSignature, formatJPY } from '../utils';
-import { exportCustomersToSheets, getCustomerSalesRankings } from '../services/dataService';
+import { getCustomerSalesRankings } from '../services/dataService';
+import * as XLSX from 'xlsx';
 
 interface CustomerListProps {
   customers: Customer[];
@@ -29,7 +30,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, searchTerm, onSe
   const [isSaving, setIsSaving] = useState(false);
   const [enrichingId, setEnrichingId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [exportResult, setExportResult] = useState<{ url: string; message: string } | null>(null);
+  //const [exportResult, setExportResult] = useState<{ url: string; message: string } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const mounted = useRef(true);
 
@@ -240,34 +241,126 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, searchTerm, onSe
     }));
   }, [sortedCustomers]);
 
-  const handleExportToSheets = async () => {
-    if (!currentUser) {
-      addToast('ログインユーザー情報が見つかりません。', 'error');
-      return;
-    }
-    if (exportRows.length === 0) {
-      addToast('出力対象の顧客がありません。', 'warning');
-      return;
-    }
-    setIsExporting(true);
-    setExportResult(null);
-    try {
-      const resp = await exportCustomersToSheets({
-        userId: currentUser.id,
-        entity: 'customers',
-        rows: exportRows,
-        sheetName: '顧客一覧',
-        append: true,
-      });
-      setExportResult({ url: resp.spreadsheetUrl, message: `${resp.sheetName} に ${resp.updatedRows} 件書き出しました` });
-      addToast('顧客一覧をGoogle Sheetsに書き出しました', 'success');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Sheets出力に失敗しました';
-      addToast(message, 'error');
-    } finally {
-      setIsExporting(false);
-    }
-  };
+  const handleExportToExcel = async () => {
+  if (exportRows.length === 0) {
+    addToast(
+      '出力対象の顧客がありません。',
+      'warning'
+    );
+    return;
+  }
+
+  setIsExporting(true);
+
+  try {
+    const excelRows = exportRows.map((row) => ({
+      顧客コード:
+        row.customerCode || '',
+
+      顧客名:
+        row.customerName || '',
+
+      電話番号:
+        row.phoneNumber || '',
+
+      住所:
+        row.address1 || '',
+
+      Webサイト:
+        row.websiteUrl || '',
+
+      代表者:
+        row.representative || '',
+
+      代表者役職:
+        row.representativeTitle || '',
+
+      連絡先情報:
+        row.customerContactInfo || '',
+
+      登録日:
+        row.createdAt
+          ? new Date(
+              row.createdAt
+            ).toLocaleDateString(
+              'ja-JP'
+            )
+          : '',
+
+      詳細URL:
+        row.detailUrl || '',
+    }));
+
+    const worksheet =
+      XLSX.utils.json_to_sheet(
+        excelRows
+      );
+
+    worksheet['!cols'] = [
+      { wch: 12 }, // 顧客コード
+      { wch: 32 }, // 顧客名
+      { wch: 18 }, // 電話番号
+      { wch: 45 }, // 住所
+      { wch: 35 }, // Web
+      { wch: 20 }, // 代表者
+      { wch: 18 }, // 役職
+      { wch: 35 }, // 連絡先
+      { wch: 14 }, // 登録日
+      { wch: 50 }, // URL
+    ];
+
+    const workbook =
+      XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      '顧客一覧'
+    );
+
+    const now = new Date();
+
+    const y =
+      now.getFullYear();
+
+    const m =
+      String(
+        now.getMonth() + 1
+      ).padStart(2, '0');
+
+    const d =
+      String(
+        now.getDate()
+      ).padStart(2, '0');
+
+    const fileName =
+      `顧客一覧_${y}${m}${d}.xlsx`;
+
+    XLSX.writeFile(
+      workbook,
+      fileName
+    );
+
+    addToast(
+      `${exportRows.length}件をExcelに出力しました。`,
+      'success'
+    );
+  } catch (error) {
+    console.error(
+      '[CustomerList] Excel export error:',
+      error
+    );
+
+    addToast(
+      error instanceof Error
+        ? error.message
+        : 'Excel出力に失敗しました。',
+      'error'
+    );
+  } finally {
+    setIsExporting(false);
+  }
+};
 
   if (customers.length === 0 && !searchTerm) {
     return <EmptyState icon={Users} title="顧客が登録されていません" message="最初の顧客を登録して、取引を開始しましょう。" action={{ label: "新規顧客登録", onClick: onNewCustomer, icon: PlusCircle }} />;
@@ -362,25 +455,21 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, searchTerm, onSe
             </div>
             <div className="flex items-center gap-3">
           <button
-            type="button"
-            onClick={handleExportToSheets}
-            disabled={isExporting}
-            className={`inline-flex items-center gap-2 rounded-md px-4 py-1.5 text-xs font-semibold text-white ${isExporting ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-              }`}
-          >
-            {isExporting ? '出力中…' : 'Sheetsへエクスポート'}
-          </button>
+  type="button"
+  onClick={handleExportToExcel}
+  disabled={isExporting}
+  className={`inline-flex items-center gap-2 rounded-md px-4 py-1.5 text-xs font-semibold text-white ${
+    isExporting
+      ? 'bg-slate-400 cursor-not-allowed'
+      : 'bg-green-600 hover:bg-green-700'
+  }`}
+>
+  {isExporting
+    ? '出力中…'
+    : 'Excelへエクスポート'}
+</button>
         </div>
       </div>
-      {exportResult && (
-        <div className="px-6 py-2 text-xs text-slate-500 dark:text-slate-400">
-          {exportResult.message}
-          {' '}
-          <a href={exportResult.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-            開く
-          </a>
-        </div>
-      )}
       <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
         <table className="w-full text-sm text-left text-slate-600 dark:text-slate-400 min-w-[1000px]">
           <thead className="text-sm font-medium text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700">
