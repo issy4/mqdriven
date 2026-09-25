@@ -1794,6 +1794,29 @@ export const getCustomers = async (): Promise<Customer[]> => {
     return customers;
 };
 
+export const getCustomerById = async (
+    id: string
+): Promise<Customer | null> => {
+    if (!id) return null;
+
+    const supabase = getSupabase();
+
+    const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+    ensureSupabaseSuccess(
+        error,
+        'Failed to fetch customer'
+    );
+
+    return data
+        ? dbCustomerToCustomer(data)
+        : null;
+};
+
 export interface CustomerSalesSummaryV2 {
     customer_uuid: string;
     invoice_count: number;

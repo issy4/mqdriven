@@ -975,7 +975,7 @@ const CustomerAnalyticsPage: React.FC<
             M率
           </div>
 
-          <div className="text-3xl font-black tabular-nums text-slate-900">
+          <div className="text-center text-3xl font-black tabular-nums text-slate-900">
             {totals.mqRate === null
               ? '—'
               : formatPercent(totals.mqRate)}
@@ -1097,7 +1097,7 @@ const CustomerAnalyticsPage: React.FC<
                     </th>
 
                     <th className="px-4 py-3 text-right font-medium">
-                      MQ率
+                      M率
                     </th>
 
                     <th className="px-4 py-3 text-right font-medium">

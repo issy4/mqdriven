@@ -1,426 +1,1618 @@
-import React, { useEffect, useState } from 'react';
-import { CustomerInfo } from '../../types';
-import { getCustomerInfo, saveCustomerInfo } from '../../services/dataService';
-import { Loader, Save, AlertTriangle, CheckCircle } from '../Icons';
-import { useSubmitWithConfirmation } from '../../hooks/useSubmitWithConfirmation';
+import React, {
+  useEffect,
+  useState,
+} from 'react';
 
-type FieldType = 'text' | 'textarea';
+import type {
+  Customer,
+  CustomerInfo,
+} from '../../types';
 
-interface FieldDefinition {
-    key: keyof CustomerInfo;
-    label: string;
-    type?: FieldType;
-    rows?: number;
-}
-
-interface SectionDefinition {
-    key: string;
-    title: string;
-    description?: string;
-    fields: FieldDefinition[];
-}
+import {
+  getCustomerById,
+  getCustomerInfo,
+  saveCustomerInfo,
+  updateCustomer,
+} from '../../services/dataService';
 
 interface CustomerInfoFormProps {
-    customerId?: string | null;
-    onSaved?: () => void;
+  customerId: string | null;
+  onSaved?: () => void;
 }
 
-const formatDateTime = (value: string | null) => {
-    if (!value) return '-';
-    try {
-        return new Date(value).toLocaleString('ja-JP', { hour12: false });
-    } catch (error) {
-        console.warn('Failed to format timestamp', error);
-        return value;
+type FinancialForm = {
+  capital: string;
+  annualSales: string;
+  creditLimit: string;
+  closingDay: string;
+  payDay: string;
+  recoveryMethod: string;
+};
+
+const EMPTY_FINANCIAL: FinancialForm = {
+  capital: '',
+  annualSales: '',
+  creditLimit: '',
+  closingDay: '',
+  payDay: '',
+  recoveryMethod: '',
+};
+
+const inputClass =
+  'w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400';
+
+const textareaClass =
+  'w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400';
+
+const sectionClass =
+  'rounded-3xl border border-slate-200 bg-white p-6 shadow-sm md:p-8';
+
+const labelClass =
+  'mb-2 block text-sm font-semibold text-slate-700';
+
+const CustomerInfoForm: React.FC<
+  CustomerInfoFormProps
+> = ({
+  customerId,
+  onSaved,
+}) => {
+  const [customer, setCustomer] =
+    useState<Customer | null>(null);
+
+  const [info, setInfo] =
+    useState<CustomerInfo | null>(null);
+
+  const [
+    financial,
+    setFinancial,
+  ] =
+    useState<FinancialForm>(
+      EMPTY_FINANCIAL
+    );
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [saving, setSaving] =
+    useState(false);
+
+  const [error, setError] =
+    useState<string | null>(null);
+
+  const [savedMessage, setSavedMessage] =
+    useState<string | null>(null);
+
+  useEffect(() => {
+    if (!customerId) {
+      setCustomer(null);
+      setInfo(null);
+      setLoading(false);
+      return;
     }
-};
 
-const createEmptyCustomerInfo = (customerId = ''): CustomerInfo => ({
-    id: customerId,
-    rank: null,
-    phoneNumber: null,
-    faxNumber: null,
-    introducer: null,
-    introductionDetail: null,
-    previousPerson: null,
-    salesTrends: null,
-    grossProfit: null,
-    grossProfitByProduct: null,
-    companyContent: null,
-    keyPerson: null,
-    orderRate: null,
-    generalNewspaperCoverage: null,
-    specialtyMagazineCoverage: null,
-    industryNewspaperCoverage: null,
-    chamberOfCommerce: null,
-    correspondenceEducation: null,
-    otherMedia: null,
-    codeNo: null,
-    businessResult: null,
-    companyFeatures: null,
-    customerTrends: null,
-    incidents: null,
-    competitors: null,
-    competitorMeasures: null,
-    salesTarget: null,
-    businessSummary: null,
-    externalItems: null,
-    internalItems: null,
-    quotationPoints: null,
-    orderProcess: null,
-    mainProducts: null,
-    totalOrderAmount: null,
-    needsAndIssues: null,
-    competitorInfo: null,
-    employeeCount: null,
-    businessStartYear: null,
-    creditLimit: null,
-    personInCharge: null,
-    closingDate: null,
-    paymentDate: null,
-    paymentTerms: null,
-    companyName: null,
-    address: null,
-    representativeName: null,
-    establishmentYear: null,
-    capital: null,
-    annualSales: null,
-    keyPersonInfo: null,
-    customerContactInfo: null,
-    orgChart: null,
-    pq: null,
-    vq: null,
-    mq: null,
-    mRate: null,
-    accidentHistory: null,
-    customerVoice: null,
-    annualActionPlan: null,
-    lostOrders: null,
-    growthPotential: null,
-    requirements: null,
-    other: null,
-    createdAt: null,
-    updatedAt: null,
-});
+    let cancelled = false;
 
-const FINANCIAL_SECTION: SectionDefinition = {
-    key: 'financial',
-    title: 'Financial / Terms',
-    description: '信用・支払い条件',
-    fields: [
-        { key: 'capital', label: '資本金' },
-        { key: 'annualSales', label: '年商' },
-        { key: 'creditLimit', label: '与信限度額' },
-        { key: 'closingDate', label: '締日' },
-        { key: 'paymentDate', label: '支払日' },
-        { key: 'paymentTerms', label: '支払条件 / サイクル' },
-    ],
-};
+    const loadData = async () => {
+      setLoading(true);
+      setError(null);
+      setSavedMessage(null);
 
-const SALES_SECTION: SectionDefinition = {
-    key: 'sales',
-    title: 'Sales / KPI',
-    description: '取引状況と指標',
-    fields: [
-        { key: 'pq', label: 'PQ' },
-        { key: 'vq', label: 'VQ' },
-        { key: 'mq', label: 'MQ' },
-        { key: 'mRate', label: 'M率' },
-        { key: 'orderRate', label: '受注率' },
-        { key: 'salesTrends', label: '売上推移', type: 'textarea', rows: 3 },
-        { key: 'grossProfit', label: '粗利', type: 'textarea', rows: 2 },
-        { key: 'grossProfitByProduct', label: '製品別粗利', type: 'textarea', rows: 2 },
-        { key: 'businessResult', label: '営業成績', type: 'textarea', rows: 3 },
-        { key: 'salesTarget', label: '営業目標', type: 'textarea', rows: 3 },
-    ],
-};
+      try {
+        const [
+          customerResult,
+          infoResult,
+        ] =
+          await Promise.all([
+            getCustomerById(
+              customerId
+            ),
+            getCustomerInfo(
+              customerId
+            ),
+          ]);
 
-const MEDIA_SECTION: SectionDefinition = {
-    key: 'media',
-    title: 'Media / Publication',
-    description: '露出状況',
-    fields: [
-        { key: 'generalNewspaperCoverage', label: '一般紙掲載' },
-        { key: 'specialtyMagazineCoverage', label: '専門誌掲載' },
-        { key: 'industryNewspaperCoverage', label: '業界紙掲載' },
-        { key: 'chamberOfCommerce', label: '商工会加入状況' },
-        { key: 'correspondenceEducation', label: '通信教育利用' },
-        { key: 'otherMedia', label: 'その他メディア' },
-    ],
-};
+        if (cancelled) return;
 
-const RELATIONSHIP_SECTION: SectionDefinition = {
-    key: 'relationship',
-    title: 'Relationship / Memo',
-    description: '人物・引継ぎ情報',
-    fields: [
-        { key: 'introducer', label: '紹介者' },
-        { key: 'introductionDetail', label: '紹介経緯', type: 'textarea', rows: 3 },
-        { key: 'previousPerson', label: '前担当者' },
-        { key: 'personInCharge', label: '自社担当者' },
-        { key: 'keyPerson', label: 'キーパーソン' },
-        { key: 'keyPersonInfo', label: 'キーパーソン情報', type: 'textarea', rows: 3 },
-        { key: 'customerContactInfo', label: '顧客窓口情報', type: 'textarea', rows: 3 },
-        { key: 'orgChart', label: '組織図 / 体制', type: 'textarea', rows: 3 },
-    ],
-};
+        setCustomer(
+          customerResult
+        );
 
-const KARTE_SECTION: SectionDefinition = {
-    key: 'karte',
-    title: 'Karte Text Fields',
-    description: '顧客カルテ記述欄',
-    fields: [
-        { key: 'companyContent', label: '会社概要', type: 'textarea', rows: 3 },
-        { key: 'companyFeatures', label: '会社の特徴', type: 'textarea', rows: 3 },
-        { key: 'customerTrends', label: '顧客動向', type: 'textarea', rows: 3 },
-        { key: 'incidents', label: '事故・トラブル', type: 'textarea', rows: 3 },
-        { key: 'competitors', label: '競合他社', type: 'textarea', rows: 3 },
-        { key: 'competitorMeasures', label: '競合対策', type: 'textarea', rows: 3 },
-        { key: 'businessSummary', label: '取引概要', type: 'textarea', rows: 3 },
-        { key: 'externalItems', label: '外部要素', type: 'textarea', rows: 3 },
-        { key: 'internalItems', label: '内部要素', type: 'textarea', rows: 3 },
-        { key: 'quotationPoints', label: '見積ポイント', type: 'textarea', rows: 3 },
-        { key: 'orderProcess', label: '受注プロセス', type: 'textarea', rows: 3 },
-        { key: 'mainProducts', label: '主要製品', type: 'textarea', rows: 3 },
-        { key: 'totalOrderAmount', label: '累計受注額', type: 'textarea', rows: 2 },
-        { key: 'needsAndIssues', label: 'ニーズ・課題', type: 'textarea', rows: 3 },
-        { key: 'competitorInfo', label: '競合情報', type: 'textarea', rows: 3 },
-        { key: 'accidentHistory', label: '事故履歴', type: 'textarea', rows: 3 },
-        { key: 'customerVoice', label: '顧客の声', type: 'textarea', rows: 3 },
-        { key: 'annualActionPlan', label: '年間行動計画', type: 'textarea', rows: 3 },
-        { key: 'lostOrders', label: '失注案件', type: 'textarea', rows: 3 },
-        { key: 'growthPotential', label: '成長可能性', type: 'textarea', rows: 3 },
-        { key: 'requirements', label: '要望事項', type: 'textarea', rows: 3 },
-        { key: 'other', label: 'その他メモ', type: 'textarea', rows: 3 },
-    ],
-};
+        setInfo(
+          infoResult
+        );
 
-const SECTIONS: SectionDefinition[] = [
-    FINANCIAL_SECTION,
-    SALES_SECTION,
-    MEDIA_SECTION,
-    RELATIONSHIP_SECTION,
-    KARTE_SECTION,
-];
+        setFinancial({
+          capital:
+            customerResult
+              ?.capital != null
+              ? String(
+                  customerResult.capital
+                )
+              : '',
 
-const CustomerInfoForm: React.FC<CustomerInfoFormProps> = ({ customerId, onSaved }) => {
-    const [info, setInfo] = useState<CustomerInfo>(() => createEmptyCustomerInfo(customerId ?? ''));
-    const [isLoading, setIsLoading] = useState(false);
-    const [hasLoaded, setHasLoaded] = useState(false);
-    const [loadError, setLoadError] = useState<string | null>(null);
-    const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-    const [isSaving, setIsSaving] = useState(false);
-    const [refreshIndex, setRefreshIndex] = useState(0);
-    const { requestConfirmation, ConfirmationDialog } = useSubmitWithConfirmation();
+          annualSales:
+            customerResult
+              ?.annualSales != null
+              ? String(
+                  customerResult.annualSales
+                )
+              : '',
 
-    useEffect(() => {
-        if (!customerId) {
-            setInfo(createEmptyCustomerInfo(''));
-            setHasLoaded(false);
-            setLoadError(null);
-            return;
-        }
-        let isMounted = true;
-        setIsLoading(true);
-        setHasLoaded(false);
-        setLoadError(null);
-        setStatus(null);
-        setInfo(createEmptyCustomerInfo(customerId));
+          creditLimit:
+            customerResult
+              ?.creditLimit != null
+              ? String(
+                  customerResult.creditLimit
+                )
+              : '',
 
-        getCustomerInfo(customerId)
-            .then(data => {
-                if (!isMounted) return;
-                setInfo(data);
-                setHasLoaded(true);
-            })
-            .catch(error => {
-                if (!isMounted) return;
-                console.error('Failed to load customer info', error);
-                setLoadError('お客様カルテの取得に失敗しました。接続情報をご確認のうえ、再試行してください。');
-            })
-            .finally(() => {
-                if (isMounted) {
-                    setIsLoading(false);
-                }
-            });
+          closingDay:
+            customerResult
+              ?.closingDay != null
+              ? String(
+                  customerResult.closingDay
+                )
+              : '',
 
-        return () => {
-            isMounted = false;
-        };
-    }, [customerId, refreshIndex]);
+          payDay:
+            customerResult
+              ?.payDay != null
+              ? String(
+                  customerResult.payDay
+                )
+              : '',
 
-    const handleRetry = () => {
-        setRefreshIndex(prev => prev + 1);
-    };
-
-    const handleFieldChange = (key: keyof CustomerInfo, value: string) => {
-        setInfo(prev => ({ ...prev, [key]: value }));
-        if (status) {
-            setStatus(null);
-        }
-    };
-
-    const saveKarte = async (): Promise<boolean> => {
-        if (!customerId || !hasLoaded) return false;
-        setIsSaving(true);
-        setStatus(null);
-        try {
-            const saved = await saveCustomerInfo(customerId, info);
-            setInfo(saved);
-            setStatus({ type: 'success', message: 'お客様カルテを保存しました。' });
-            return true;
-        } catch (error) {
-            console.error('Failed to save customer info', error);
-            setStatus({ type: 'error', message: '保存に失敗しました。入力内容と接続を確認してから再試行してください。' });
-            return false;
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const handleSubmit = async (event: React.FormEvent) => {
-        event.preventDefault();
-        if (!customerId || !hasLoaded) return;
-        await requestConfirmation({
-            label: 'お客様カルテを保存',
-            title: 'お客様カルテを保存しますか？',
-            description: 'はいを選ぶとカルテが保存され、顧客一覧へ戻ります。内容の最終確認をしてください。',
-            confirmLabel: '保存する',
-            cancelLabel: 'キャンセル',
-            forceConfirmation: true,
-            onConfirm: async () => {
-                const saved = await saveKarte();
-                if (saved) {
-                    onSaved?.();
-                }
-            },
+          recoveryMethod:
+            customerResult
+              ?.recoveryMethod != null
+              ? String(
+                  customerResult.recoveryMethod
+                )
+              : '',
         });
+      } catch (e) {
+        console.error(
+          '[CustomerInfoForm] load error:',
+          e
+        );
+
+        setError(
+          e instanceof Error
+            ? e.message
+            : '顧客カルテ情報を取得できませんでした。'
+        );
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
     };
 
-    const inputClass = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:focus:border-blue-400 dark:focus:ring-blue-400 dark:disabled:bg-slate-700 dark:disabled:text-slate-300';
+    loadData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId]);
+
+  const handleFinancialChange =
+    (
+      field: keyof FinancialForm,
+      value: string
+    ) => {
+      setFinancial(
+        (prev) => ({
+          ...prev,
+          [field]: value,
+        })
+      );
+
+      setSavedMessage(null);
+    };
+
+  const handleInfoChange =
+    (
+      field: string,
+      value: string
+    ) => {
+      setInfo(
+        (prev) => ({
+          ...(prev || {}),
+          [field]: value,
+        })
+      );
+
+      setSavedMessage(null);
+    };
+
+  const handleSave = async (
+    event:
+      React.FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
 
     if (!customerId) {
-        return (
-            <>
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-900/40 dark:text-amber-100">
-                    顧客情報を保存すると、お客様カルテを編集できます。
-                </div>
-                {ConfirmationDialog}
-            </>
-        );
+      setError(
+        '顧客IDがありません。'
+      );
+      return;
     }
 
-    if (!hasLoaded && isLoading) {
-        return (
-            <>
-                <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white/70 p-4 text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200">
-                    <Loader className="h-5 w-5 animate-spin" />
-                    お客様カルテを読み込み中です…
-                </div>
-                {ConfirmationDialog}
-            </>
-        );
-    }
+    setSaving(true);
+    setError(null);
+    setSavedMessage(null);
 
-    if (!hasLoaded && loadError) {
-        return (
-            <>
-                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-100">
-                    <AlertTriangle className="h-5 w-5" />
-                    <span className="flex-1">{loadError}</span>
-                    <button type="button" onClick={handleRetry} className="rounded-md border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 dark:border-red-500/50 dark:text-red-100 dark:hover:bg-red-900/40">
-                        再試行
-                    </button>
-                </div>
-                {ConfirmationDialog}
-            </>
-        );
-    }
+    try {
+      /**
+       * --------------------------------------------------
+       * 1. Financial / Terms
+       *    → customers を更新
+       * --------------------------------------------------
+       */
+      const updatedCustomer =
+        await updateCustomer(
+          customerId,
+          {
+            capital:
+              financial.capital ||
+              null,
 
+            annualSales:
+              financial.annualSales ||
+              null,
+
+            creditLimit:
+              financial.creditLimit ||
+              null,
+
+            closingDay:
+              financial.closingDay ||
+              null,
+
+            payDay:
+              financial.payDay ||
+              null,
+
+            recoveryMethod:
+              financial.recoveryMethod ||
+              null,
+          }
+        );
+
+      /**
+       * --------------------------------------------------
+       * 2. カルテ固有情報
+       *    → customers_info を更新
+       * --------------------------------------------------
+       *
+       * Financial系は意図的に除外。
+       */
+      const infoPayload: Partial<CustomerInfo> =
+        {
+          keyPerson:
+            info?.keyPerson ||
+            null,
+
+          keyPersonInfo:
+            info?.keyPersonInfo ||
+            null,
+
+          personInCharge:
+            info?.personInCharge ||
+            null,
+
+          customerContactInfo:
+            info?.customerContactInfo ||
+            null,
+
+          businessResult:
+            info?.businessResult ||
+            null,
+
+          companyFeatures:
+            info?.companyFeatures ||
+            null,
+
+          customerTrends:
+            info?.customerTrends ||
+            null,
+
+          salesTrends:
+            info?.salesTrends ||
+            null,
+
+          companyContent:
+            info?.companyContent ||
+            null,
+
+          businessSummary:
+            info?.businessSummary ||
+            null,
+
+          salesTarget:
+            info?.salesTarget ||
+            null,
+
+          needsAndIssues:
+            info?.needsAndIssues ||
+            null,
+
+          requirements:
+            info?.requirements ||
+            null,
+
+          competitors:
+            info?.competitors ||
+            null,
+
+          competitorInfo:
+            info?.competitorInfo ||
+            null,
+
+          competitorMeasures:
+            info?.competitorMeasures ||
+            null,
+
+          incidents:
+            info?.incidents ||
+            null,
+
+          accidentHistory:
+            info?.accidentHistory ||
+            null,
+
+          customerVoice:
+            info?.customerVoice ||
+            null,
+
+          quotationPoints:
+            info?.quotationPoints ||
+            null,
+
+          orderProcess:
+            info?.orderProcess ||
+            null,
+
+          mainProducts:
+            info?.mainProducts ||
+            null,
+
+          externalItems:
+            info?.externalItems ||
+            null,
+
+          internalItems:
+            info?.internalItems ||
+            null,
+
+          annualActionPlan:
+            info?.annualActionPlan ||
+            null,
+
+          lostOrders:
+            info?.lostOrders ||
+            null,
+
+          growthPotential:
+            info?.growthPotential ||
+            null,
+
+          orgChart:
+            info?.orgChart ||
+            null,
+
+          other:
+            info?.other ||
+            null,
+
+          orderRate:
+            info?.orderRate ??
+            null,
+        };
+
+      const updatedInfo =
+        await saveCustomerInfo(
+          customerId,
+          infoPayload
+        );
+
+      setCustomer(
+        updatedCustomer
+      );
+
+      setInfo(
+        updatedInfo
+      );
+
+      setSavedMessage(
+        'お客様カルテを保存しました。'
+      );
+
+      onSaved?.();
+    } catch (e) {
+      console.error(
+        '[CustomerInfoForm] save error:',
+        e
+      );
+
+      setError(
+        e instanceof Error
+          ? e.message
+          : 'お客様カルテの保存に失敗しました。'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!customerId) {
     return (
-        <>
-            <form onSubmit={handleSubmit} className="space-y-6">
-                {status && (
-                    <div className={`flex items-center gap-3 rounded-lg border p-4 text-sm ${status.type === 'success'
-                        ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-500/40 dark:bg-green-900/40 dark:text-green-100'
-                        : 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-100'
-                    }`}>
-                        {status.type === 'success' ? <CheckCircle className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
-                        {status.message}
-                    </div>
-                )}
-
-                <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 md:grid-cols-3 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
-                    <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">顧客ID</p>
-                        <p className="mt-1 text-base font-medium text-slate-900 dark:text-white">{info.id || '-'}</p>
-                    </div>
-                    <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">作成日時</p>
-                        <p className="mt-1 text-base text-slate-900 dark:text-white">{formatDateTime(info.createdAt)}</p>
-                    </div>
-                    <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">最終更新</p>
-                        <p className="mt-1 text-base text-slate-900 dark:text-white">{formatDateTime(info.updatedAt)}</p>
-                    </div>
-                </div>
-
-                {SECTIONS.map(section => (
-                    <section key={section.key} className="space-y-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                        {(section.title || section.description) && (
-                            <div>
-                                {section.title && <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{section.title}</h3>}
-                                {section.description && (
-                                    <p className="text-sm text-slate-500 dark:text-slate-300">{section.description}</p>
-                                )}
-                            </div>
-                        )}
-                        <div className={`grid grid-cols-1 gap-4 ${section.key === 'karte' ? '' : 'md:grid-cols-2'}`}>
-                            {section.fields.map(field => (
-                                <div key={`${section.key}_${String(field.key)}`} className="flex flex-col gap-1">
-                                    <label className="text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor={`${section.key}_${String(field.key)}`}>
-                                        {field.label}
-                                    </label>
-                                    {field.type === 'textarea' ? (
-                                        <textarea
-                                            id={`${section.key}_${String(field.key)}`}
-                                            name={String(field.key)}
-                                            rows={field.rows ?? 3}
-                                            className={`${inputClass} text-sm`}
-                                            value={info[field.key] ?? ''}
-                                            onChange={event => handleFieldChange(field.key, event.target.value)}
-                                            disabled={isSaving || !hasLoaded}
-                                        />
-                                    ) : (
-                                        <input
-                                            id={`${section.key}_${String(field.key)}`}
-                                            name={String(field.key)}
-                                            type="text"
-                                            className={`${inputClass} text-sm`}
-                                            value={info[field.key] ?? ''}
-                                            onChange={event => handleFieldChange(field.key, event.target.value)}
-                                            disabled={isSaving || !hasLoaded}
-                                        />
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    </section>
-                ))}
-
-                <div className="flex justify-end">
-                    <button
-                        type="submit"
-                        disabled={isSaving || !hasLoaded}
-                        className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-blue-500 dark:hover:bg-blue-400 dark:disabled:bg-slate-600"
-                    >
-                        {isSaving ? <Loader className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}保存
-                    </button>
-                </div>
-            </form>
-            {ConfirmationDialog}
-        </>
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+        顧客が選択されていません。
+      </div>
     );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[300px] items-center justify-center text-slate-500">
+        顧客カルテを読み込んでいます...
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={handleSave}
+      className="space-y-8"
+    >
+      {/* =====================================================
+          Status
+      ===================================================== */}
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {savedMessage && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+          {savedMessage}
+        </div>
+      )}
+
+      {/* =====================================================
+          Record Info
+      ===================================================== */}
+      <div className="grid grid-cols-1 gap-5 rounded-2xl border border-slate-200 bg-slate-50 p-5 md:grid-cols-3">
+        <div>
+          <div className="text-xs font-semibold text-slate-500">
+            顧客ID
+          </div>
+
+          <div className="mt-1 break-all font-medium text-slate-900">
+            {customerId}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-semibold text-slate-500">
+            作成日時
+          </div>
+
+          <div className="mt-1 font-medium text-slate-900">
+            {info?.createdAt
+              ? new Date(
+                  String(
+                    info.createdAt
+                  )
+                ).toLocaleString(
+                  'ja-JP'
+                )
+              : '-'}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-semibold text-slate-500">
+            最終更新
+          </div>
+
+          <div className="mt-1 font-medium text-slate-900">
+            {info?.updatedAt
+              ? new Date(
+                  String(
+                    info.updatedAt
+                  )
+                ).toLocaleString(
+                  'ja-JP'
+                )
+              : '-'}
+          </div>
+        </div>
+      </div>
+
+      {/* =====================================================
+          Financial / Terms
+          customers テーブル
+      ===================================================== */}
+      <section
+        className={
+          sectionClass
+        }
+      >
+        <div className="mb-7">
+          <h3 className="text-xl font-bold text-slate-900">
+            Financial / Terms
+          </h3>
+
+          <p className="mt-1 text-sm text-slate-500">
+            信用・支払い条件
+          </p>
+
+          <p className="mt-2 text-xs text-blue-600">
+            ※ この項目は顧客マスタ
+            （customers）と共通です。
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-x-6 gap-y-6 md:grid-cols-2">
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              資本金
+            </label>
+
+            <input
+              type="text"
+              value={
+                financial.capital
+              }
+              onChange={(e) =>
+                handleFinancialChange(
+                  'capital',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                inputClass
+              }
+              placeholder="例：10,000,000"
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              年商
+            </label>
+
+            <input
+              type="text"
+              value={
+                financial.annualSales
+              }
+              onChange={(e) =>
+                handleFinancialChange(
+                  'annualSales',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                inputClass
+              }
+              placeholder="例：500,000,000"
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              与信限度額
+            </label>
+
+            <input
+              type="text"
+              value={
+                financial.creditLimit
+              }
+              onChange={(e) =>
+                handleFinancialChange(
+                  'creditLimit',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                inputClass
+              }
+              placeholder="例：5,000,000"
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              締日
+            </label>
+
+            <input
+              type="text"
+              value={
+                financial.closingDay
+              }
+              onChange={(e) =>
+                handleFinancialChange(
+                  'closingDay',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                inputClass
+              }
+              placeholder="例：月末 / 20"
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              支払日
+            </label>
+
+            <input
+              type="text"
+              value={
+                financial.payDay
+              }
+              onChange={(e) =>
+                handleFinancialChange(
+                  'payDay',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                inputClass
+              }
+              placeholder="例：翌月15日 / 15"
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              支払条件 / サイクル
+            </label>
+
+            <input
+              type="text"
+              value={
+                financial.recoveryMethod
+              }
+              onChange={(e) =>
+                handleFinancialChange(
+                  'recoveryMethod',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                inputClass
+              }
+              placeholder="例：月末締め翌月15日払い"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================
+          Key Person
+          customers_info
+      ===================================================== */}
+      <section
+        className={
+          sectionClass
+        }
+      >
+        <div className="mb-7">
+          <h3 className="text-xl font-bold text-slate-900">
+            Key Person / Contact
+          </h3>
+
+          <p className="mt-1 text-sm text-slate-500">
+            キーパーソン・窓口情報
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              キーパーソン /
+              担当者
+            </label>
+
+            <input
+              type="text"
+              value={
+                String(
+                  info?.keyPerson ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'keyPerson',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                inputClass
+              }
+              placeholder="例：営業部 ○○部長"
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              社内担当者
+            </label>
+
+            <input
+              type="text"
+              value={
+                String(
+                  info?.personInCharge ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'personInCharge',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                inputClass
+              }
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label
+              className={
+                labelClass
+              }
+            >
+              キーパーソン補足
+            </label>
+
+            <textarea
+              rows={3}
+              value={
+                String(
+                  info?.keyPersonInfo ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'keyPersonInfo',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+              placeholder="決裁権、連絡時の注意事項など"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label
+              className={
+                labelClass
+              }
+            >
+              連絡先補足
+            </label>
+
+            <textarea
+              rows={3}
+              value={
+                String(
+                  info?.customerContactInfo ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'customerContactInfo',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================
+          Business Profile
+      ===================================================== */}
+      <section
+        className={
+          sectionClass
+        }
+      >
+        <div className="mb-7">
+          <h3 className="text-xl font-bold text-slate-900">
+            Business Profile
+          </h3>
+
+          <p className="mt-1 text-sm text-slate-500">
+            取引概要・会社特徴
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <label
+              className={
+                labelClass
+              }
+            >
+              取引成績
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.businessResult ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'businessResult',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label
+              className={
+                labelClass
+              }
+            >
+              会社の特徴
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.companyFeatures ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'companyFeatures',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              顧客動向
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.customerTrends ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'customerTrends',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              営業動向
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.salesTrends ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'salesTrends',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label
+              className={
+                labelClass
+              }
+            >
+              事業概要
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.businessSummary ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'businessSummary',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================
+          Sales Strategy
+      ===================================================== */}
+      <section
+        className={
+          sectionClass
+        }
+      >
+        <div className="mb-7">
+          <h3 className="text-xl font-bold text-slate-900">
+            Sales Strategy
+          </h3>
+
+          <p className="mt-1 text-sm text-slate-500">
+            営業戦略・ニーズ・受注情報
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              受注率（%）
+            </label>
+
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              value={
+                info?.orderRate ??
+                ''
+              }
+              onChange={(e) =>
+                setInfo(
+                  (prev) => ({
+                    ...(prev ||
+                      {}),
+                    orderRate:
+                      e.target
+                        .value ===
+                      ''
+                        ? null
+                        : Number(
+                            e.target
+                              .value
+                          ),
+                  })
+                )
+              }
+              disabled={saving}
+              className={
+                inputClass
+              }
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              営業目標
+            </label>
+
+            <input
+              type="text"
+              value={
+                String(
+                  info?.salesTarget ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'salesTarget',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                inputClass
+              }
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label
+              className={
+                labelClass
+              }
+            >
+              ニーズ・課題
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.needsAndIssues ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'needsAndIssues',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label
+              className={
+                labelClass
+              }
+            >
+              要求事項
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.requirements ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'requirements',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              見積時のポイント
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.quotationPoints ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'quotationPoints',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              受注プロセス
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.orderProcess ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'orderProcess',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label
+              className={
+                labelClass
+              }
+            >
+              主力商品・案件
+            </label>
+
+            <textarea
+              rows={3}
+              value={
+                String(
+                  info?.mainProducts ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'mainProducts',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================
+          Competition / Risk
+      ===================================================== */}
+      <section
+        className={
+          sectionClass
+        }
+      >
+        <div className="mb-7">
+          <h3 className="text-xl font-bold text-slate-900">
+            Competition / Risk
+          </h3>
+
+          <p className="mt-1 text-sm text-slate-500">
+            競合・事故・リスク情報
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              競合先
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.competitors ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'competitors',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              競合情報
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.competitorInfo ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'competitorInfo',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label
+              className={
+                labelClass
+              }
+            >
+              競合対策
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.competitorMeasures ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'competitorMeasures',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              トラブル・事故
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.incidents ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'incidents',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              事故履歴
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.accidentHistory ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'accidentHistory',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================
+          Other
+      ===================================================== */}
+      <section
+        className={
+          sectionClass
+        }
+      >
+        <div className="mb-7">
+          <h3 className="text-xl font-bold text-slate-900">
+            Notes
+          </h3>
+
+          <p className="mt-1 text-sm text-slate-500">
+            その他の顧客情報
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              お客様の声
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.customerVoice ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'customerVoice',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div>
+            <label
+              className={
+                labelClass
+              }
+            >
+              成長可能性
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.growthPotential ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'growthPotential',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label
+              className={
+                labelClass
+              }
+            >
+              年間行動計画
+            </label>
+
+            <textarea
+              rows={4}
+              value={
+                String(
+                  info?.annualActionPlan ??
+                    ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'annualActionPlan',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label
+              className={
+                labelClass
+              }
+            >
+              その他
+            </label>
+
+            <textarea
+              rows={5}
+              value={
+                String(
+                  info?.other ?? ''
+                )
+              }
+              onChange={(e) =>
+                handleInfoChange(
+                  'other',
+                  e.target.value
+                )
+              }
+              disabled={saving}
+              className={
+                textareaClass
+              }
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================
+          Save
+      ===================================================== */}
+      <div className="sticky bottom-4 flex justify-end">
+        <button
+          type="submit"
+          disabled={saving}
+          className="rounded-xl bg-blue-600 px-8 py-3 font-bold text-white shadow-lg transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving
+            ? '保存中...'
+            : 'お客様カルテを保存'}
+        </button>
+      </div>
+    </form>
+  );
 };
 
 export default CustomerInfoForm;
