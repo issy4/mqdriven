@@ -970,17 +970,17 @@ const CustomerAnalyticsPage: React.FC<
         </div>
 
         {/* M Rate */}
-        <div className="flex items-center justify-between bg-cyan-100 px-7 py-4">
-          <div className="text-2xl font-black text-slate-900">
-            M率
-          </div>
+        <div className="grid grid-cols-[120px_1fr] items-center bg-cyan-100 px-7 py-4">
+  <div className="text-2xl font-black text-slate-900">
+    M率
+  </div>
 
-          <div className="text-center text-3xl font-black tabular-nums text-slate-900">
-            {totals.mqRate === null
-              ? '—'
-              : formatPercent(totals.mqRate)}
-          </div>
-        </div>
+  <div className="text-center text-3xl font-black tabular-nums text-slate-900">
+    {totals.mqRate === null
+      ? '—'
+      : formatPercent(totals.mqRate)}
+  </div>
+</div>
       </div>
     </div>
 
